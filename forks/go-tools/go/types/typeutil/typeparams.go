@@ -14,6 +14,32 @@ type TypeSet struct {
 }
 
 func NewTypeSet(typ types.Type) TypeSet {
+	if u, ok := singleTerm(typ); ok {
+		if u == types.Typ[types.Invalid] {
+			return TypeSet{nil, true}
+		}
+		return TypeSet{[]*types.Term{types.NewTerm(false, typ)}, false}
+	}
+	return normalTypeSet(typ)
+}
+
+// singleTerm reports whether typ is neither a type parameter nor an
+// interface, so that its type set is {typ} (empty if invalid), and returns
+// its underlying type. The IR builder asks for core types of every
+// expression; this avoids a term-set walk and map per call.
+func singleTerm(typ types.Type) (types.Type, bool) {
+	if _, ok := typ.(*types.TypeParam); ok {
+		return nil, false
+	}
+	u := typ.Underlying()
+	switch u.(type) {
+	case *types.Interface, *types.Union, *types.TypeParam:
+		return nil, false
+	}
+	return u, true
+}
+
+func normalTypeSet(typ types.Type) TypeSet {
 	terms, err := typeparams.NormalTerms(typ)
 	if err != nil {
 		if errors.Is(err, typeparams.ErrEmptyTypeSet) {
@@ -70,6 +96,12 @@ func (ts TypeSet) CoreType() types.Type {
 
 // CoreType is a wrapper for NewTypeSet(typ).CoreType()
 func CoreType(typ types.Type) types.Type {
+	if u, ok := singleTerm(typ); ok {
+		if u == types.Typ[types.Invalid] {
+			return nil
+		}
+		return u
+	}
 	return NewTypeSet(typ).CoreType()
 }
 
