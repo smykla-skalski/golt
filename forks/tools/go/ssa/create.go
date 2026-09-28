@@ -226,22 +226,10 @@ func (prog *Program) CreatePackage(pkg *types.Package, files []*ast.File, info *
 			}
 		}
 	} else {
-		// GC-compiled binary package (or "unsafe")
-		// No code.
-		// No position information.
-		scope := p.Pkg.Scope()
-		for _, name := range scope.Names() {
-			obj := scope.Lookup(name)
-			memberFromObject(p, obj, nil, "")
-			if obj, ok := obj.(*types.TypeName); ok {
-				// No Unalias: aliases should not duplicate methods.
-				if named, ok := obj.Type().(*types.Named); ok {
-					for i, n := 0, named.NumMethods(); i < n; i++ {
-						memberFromObject(p, named.Method(i), nil, "")
-					}
-				}
-			}
-		}
+		// GC-compiled binary package (or "unsafe"): no code, no positions.
+		// Analyses reference few dependency members, so create them on
+		// demand instead of allocating one per exported object.
+		p.lazy.Store(true)
 	}
 
 	if prog.mode&BareInits == 0 {
@@ -277,12 +265,104 @@ var printMu sync.Mutex
 
 // AllPackages returns a new slice containing all packages created by
 // prog.CreatePackage in unspecified order.
+//
+// Members of packages created without syntax may be incomplete; use
+// [Program.Package] or [Program.ImportedPackage] to obtain them in full.
 func (prog *Program) AllPackages() []*Package {
 	pkgs := make([]*Package, 0, len(prog.packages))
 	for _, pkg := range prog.packages {
 		pkgs = append(pkgs, pkg)
 	}
 	return pkgs
+}
+
+// materialize creates every member of a package created without
+// syntax, so that p.Members is complete. Members created earlier on
+// demand keep their identity.
+func (p *Package) materialize() {
+	if !p.lazy.Load() {
+		return
+	}
+	p.lazyMu.Lock()
+	defer p.lazyMu.Unlock()
+	if !p.lazy.Load() {
+		return
+	}
+	scope := p.Pkg.Scope()
+	for _, name := range scope.Names() {
+		obj := scope.Lookup(name)
+		p.createLazyMember(obj)
+		if obj, ok := obj.(*types.TypeName); ok {
+			// No Unalias: aliases should not duplicate methods.
+			if named, ok := obj.Type().(*types.Named); ok {
+				for i, n := 0, named.NumMethods(); i < n; i++ {
+					p.createLazyMember(named.Method(i))
+				}
+			}
+		}
+	}
+	p.lazy.Store(false)
+}
+
+// lazyObject returns the member for obj, creating it if eager package
+// creation would have. It returns nil otherwise.
+func (p *Package) lazyObject(obj types.Object) Member {
+	p.lazyMu.Lock()
+	defer p.lazyMu.Unlock()
+	if v, ok := p.objects[obj]; ok || !p.lazy.Load() {
+		return v
+	}
+	if !p.eagerMember(obj) {
+		return nil
+	}
+	p.createLazyMember(obj)
+	return p.objects[obj]
+}
+
+// eagerMember reports whether obj is a package-level object or a
+// method of a package-level named type of p, i.e. one that eager
+// creation from type information would have given a member.
+func (p *Package) eagerMember(obj types.Object) bool {
+	scope := p.Pkg.Scope()
+	fn, ok := obj.(*types.Func)
+	if !ok || fn.Signature().Recv() == nil {
+		return scope.Lookup(obj.Name()) == obj
+	}
+	recv := types.Unalias(fn.Signature().Recv().Type())
+	if ptr, ok := recv.(*types.Pointer); ok {
+		recv = types.Unalias(ptr.Elem())
+	}
+	named, ok := recv.(*types.Named)
+	if !ok {
+		return false
+	}
+	tn := named.Obj()
+	if scope.Lookup(tn.Name()) != tn {
+		return false
+	}
+	origin, ok := tn.Type().(*types.Named)
+	if !ok {
+		return false
+	}
+	for i, n := 0, origin.NumMethods(); i < n; i++ {
+		if origin.Method(i) == fn {
+			return true
+		}
+	}
+	return false
+}
+
+// createLazyMember creates the member for obj unless it exists.
+// p.lazyMu must be held.
+func (p *Package) createLazyMember(obj types.Object) {
+	if _, ok := obj.(*types.TypeName); ok {
+		if _, ok := p.Members[obj.Name()]; ok {
+			return
+		}
+	} else if _, ok := p.objects[obj]; ok {
+		return
+	}
+	memberFromObject(p, obj, nil, "")
 }
 
 // ImportedPackage returns the importable Package whose PkgPath
@@ -303,7 +383,11 @@ func (prog *Program) AllPackages() []*Package {
 // (e.g. "p" vs "p as compiled for q.test"), and each has a different
 // view of its dependencies.
 func (prog *Program) ImportedPackage(path string) *Package {
-	return prog.imported[path]
+	p := prog.imported[path]
+	if p != nil {
+		p.materialize()
+	}
+	return p
 }
 
 // SetNoReturn sets the predicate used when building the ssa.Program

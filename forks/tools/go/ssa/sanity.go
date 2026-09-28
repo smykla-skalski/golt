@@ -641,6 +641,7 @@ func sanityCheckPackage(pkg *Package) {
 
 	_ = pkg.String() // must not crash
 
+	pkg.materialize()
 	for name, mem := range pkg.Members {
 		if name != mem.Name() {
 			panic(fmt.Sprintf("%s: %T.Name() = %s, want %s",

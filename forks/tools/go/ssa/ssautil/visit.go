@@ -117,6 +117,8 @@ func AllFunctions(prog *ssa.Program) map[*ssa.Function]bool {
 	}
 
 	for _, pkg := range prog.AllPackages() {
+		// AllPackages may return partial Members; Package completes them.
+		pkg = prog.Package(pkg.Pkg)
 		for _, mem := range pkg.Members {
 			switch mem := mem.(type) {
 			case *ssa.Function:

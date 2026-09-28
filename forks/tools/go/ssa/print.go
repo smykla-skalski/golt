@@ -419,6 +419,7 @@ func WritePackage(buf *bytes.Buffer, p *Package) {
 
 	var names []string
 	maxname := 0
+	p.materialize()
 	for name := range p.Members {
 		if l := len(name); l > maxname {
 			maxname = l

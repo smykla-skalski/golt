@@ -107,6 +107,7 @@ func findEnclosingPackageLevelFunction(pkg *Package, path []ast.Node) *Function 
 func findNamedFunc(pkg *Package, pos token.Pos) *Function {
 	// Look at all package members and method sets of named types.
 	// Not very efficient.
+	pkg.materialize()
 	for _, mem := range pkg.Members {
 		switch mem := mem.(type) {
 		case *Function:
@@ -173,7 +174,11 @@ func (f *Function) ValueForExpr(e ast.Expr) (value Value, isAddr bool) {
 // type-checker package. It returns nil if no such Package was
 // created by a prior call to prog.CreatePackage.
 func (prog *Program) Package(pkg *types.Package) *Package {
-	return prog.packages[pkg]
+	p := prog.packages[pkg]
+	if p != nil {
+		p.materialize()
+	}
+	return p
 }
 
 // packageLevelMember returns the package-level member corresponding
@@ -184,10 +189,14 @@ func (prog *Program) Package(pkg *types.Package) *Package {
 // It returns nil if the object belongs to a package that has not been
 // created by prog.CreatePackage.
 func (prog *Program) packageLevelMember(obj types.Object) Member {
-	if pkg, ok := prog.packages[obj.Pkg()]; ok {
-		return pkg.objects[obj]
+	pkg, ok := prog.packages[obj.Pkg()]
+	if !ok {
+		return nil
 	}
-	return nil
+	if pkg.lazy.Load() {
+		return pkg.lazyObject(obj)
+	}
+	return pkg.objects[obj]
 }
 
 // FuncValue returns the SSA function or (non-interface) method
