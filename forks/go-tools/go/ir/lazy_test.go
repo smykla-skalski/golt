@@ -295,3 +295,31 @@ func f(xs []int) (sum int) {
 		t.Fatal("ValueForExpr found no values; debug info missing")
 	}
 }
+
+func TestLazyDependencyBuiltFromInfo(t *testing.T) {
+	const src = `package dep
+
+func Used(a, b int) {}
+`
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "dep.go", src, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	info := &types.Info{
+		Types: map[ast.Expr]types.TypeAndValue{},
+		Defs:  map[*ast.Ident]types.Object{},
+		Uses:  map[*ast.Ident]types.Object{},
+	}
+	pkg, err := new(types.Config).Check("dep", fset, []*ast.File{file}, info)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prog := ir.NewProgram(fset, 0)
+	prog.CreatePackage(pkg, nil, info, true).Build()
+
+	used := prog.FuncValue(pkg.Scope().Lookup("Used").(*types.Func))
+	if used == nil || len(used.Params) != 2 {
+		t.Fatalf("FuncValue(dep.Used) = %v, want function built with 2 params", used)
+	}
+}
