@@ -1819,6 +1819,11 @@ func (v *Function) Nodes() iter.Seq[int] {
 // NumNodes returns the number of basic blocks in the graph.
 func (v *Function) NumNodes() int { return len(v.Blocks) }
 
+// IsCompact marks the control flow graph as compactly numbered: block i
+// has Index i, which sanity checks enforce. Graph algorithms then use it
+// directly instead of wrapping it in an index.
+func (v *Function) IsCompact() {}
+
 // Out returns an iterator over the successor block indices of a given node.
 func (v *Function) Out(node int) iter.Seq[int] {
 	return func(yield func(int) bool) {
