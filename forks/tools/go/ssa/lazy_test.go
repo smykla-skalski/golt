@@ -10,6 +10,7 @@ import (
 	"sync"
 	"testing"
 
+	"golang.org/x/tools/go/callgraph/static"
 	"golang.org/x/tools/go/ssa"
 	"golang.org/x/tools/go/ssa/ssautil"
 	"golang.org/x/tools/internal/testenv"
@@ -230,5 +231,80 @@ func TestLazyDependencyConcurrent(t *testing.T) {
 				t.Fatalf("FuncValue(%v) differs between goroutines", fn)
 			}
 		}
+	}
+}
+
+func typecheckSource(t *testing.T, fset *token.FileSet, path, src string, imp types.Importer) (*types.Package, *ast.File, *types.Info) {
+	t.Helper()
+	file, err := parser.ParseFile(fset, path+".go", src, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	info := &types.Info{
+		Types:        map[ast.Expr]types.TypeAndValue{},
+		Defs:         map[*ast.Ident]types.Object{},
+		Uses:         map[*ast.Ident]types.Object{},
+		Implicits:    map[ast.Node]types.Object{},
+		Selections:   map[*ast.SelectorExpr]*types.Selection{},
+		Scopes:       map[ast.Node]*types.Scope{},
+		Instances:    map[*ast.Ident]types.Instance{},
+		FileVersions: map[*ast.File]string{},
+	}
+	pkg, err := (&types.Config{Importer: imp}).Check(path, fset, []*ast.File{file}, info)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return pkg, file, info
+}
+
+type mapImporter map[string]*types.Package
+
+func (m mapImporter) Import(path string) (*types.Package, error) { return m[path], nil }
+
+const lazyDepSrc = `package dep
+
+type T struct{}
+
+func (T) M()  {}
+func (*T) P() {}
+
+func Used(a, b int) {}
+func Unused()       {}
+`
+
+func TestLazyDependencyStaticCallGraph(t *testing.T) {
+	build := func(complete bool) []string {
+		fset := token.NewFileSet()
+		dep, _, _ := typecheckSource(t, fset, "dep", lazyDepSrc, nil)
+		main, file, info := typecheckSource(t, fset, "main", "package main\n\nimport \"dep\"\n\nfunc main() { dep.Used(1, 2) }\n", mapImporter{"dep": dep})
+		prog := ssa.NewProgram(fset, 0)
+		prog.CreatePackage(dep, nil, nil, true)
+		prog.CreatePackage(main, []*ast.File{file}, info, false).Build()
+		if complete {
+			prog.Package(dep)
+		}
+		var names []string
+		for fn := range static.CallGraph(prog).Nodes {
+			if fn != nil {
+				names = append(names, fn.String())
+			}
+		}
+		slices.Sort(names)
+		return names
+	}
+	if got, want := build(false), build(true); !slices.Equal(got, want) {
+		t.Errorf("static.CallGraph nodes = %v, want %v", got, want)
+	}
+}
+
+func TestLazyDependencyBuiltFromInfo(t *testing.T) {
+	fset := token.NewFileSet()
+	dep, _, info := typecheckSource(t, fset, "dep", lazyDepSrc, nil)
+	prog := ssa.NewProgram(fset, 0)
+	prog.CreatePackage(dep, nil, info, true).Build()
+
+	used := prog.FuncValue(dep.Scope().Lookup("Used").(*types.Func))
+	if used == nil || len(used.Params) != 2 {
+		t.Fatalf("FuncValue(dep.Used) = %v, want function built with 2 params", used)
 	}
 }

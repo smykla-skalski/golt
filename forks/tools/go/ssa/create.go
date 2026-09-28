@@ -225,11 +225,16 @@ func (prog *Program) CreatePackage(pkg *types.Package, files []*ast.File, info *
 				membersFromDecl(p, decl, goversion)
 			}
 		}
-	} else {
-		// GC-compiled binary package (or "unsafe"): no code, no positions.
-		// Analyses reference few dependency members, so create them on
-		// demand instead of allocating one per exported object.
+	} else if info == nil {
+		// GC-compiled binary package (or "unsafe"): no code, no positions,
+		// never built. Analyses reference few dependency members, so create
+		// them on demand instead of allocating one per exported object.
 		p.lazy.Store(true)
+	} else {
+		// Types without syntax but with info are built, so members must
+		// exist before Build.
+		p.lazy.Store(true)
+		p.materialize()
 	}
 
 	if prog.mode&BareInits == 0 {

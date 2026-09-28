@@ -704,6 +704,7 @@ func Interpret(mainpkg *ssa.Package, mode Mode, sizes types.Sizes, filename stri
 	}
 
 	for _, pkg := range i.prog.AllPackages() {
+		pkg = i.prog.Package(pkg.Pkg)
 		// Initialize global storage.
 		for _, m := range pkg.Members {
 			switch v := m.(type) {

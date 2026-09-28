@@ -82,6 +82,7 @@ func CallGraph(prog *ssa.Program) *callgraph.Graph {
 
 	// Start from package-level symbols.
 	for _, pkg := range prog.AllPackages() {
+		pkg = prog.Package(pkg.Pkg)
 		for _, mem := range pkg.Members {
 			switch mem := mem.(type) {
 			case *ssa.Function:
