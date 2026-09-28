@@ -154,8 +154,27 @@ func findNamedFunc(pkg *Package, pos token.Pos) *Function {
 // the ir.Value.)
 func (f *Function) ValueForExpr(e ast.Expr) (value Value, isAddr bool) {
 	e = ast.Unparen(e)
-	entry := f.exprToValue[e]
+	entry, _ := f.lookupExpr(e)
 	return entry.v, entry.isAddr
+}
+
+// lookupExpr returns the value of the first debug reference to e.
+func (f *Function) lookupExpr(e ast.Expr) (exprValue, bool) {
+	f.exprToValueOnce.Do(func() {
+		if len(f.debugExprs) == 0 {
+			return
+		}
+		m := make(map[ast.Expr]exprValue, len(f.debugExprs))
+		for _, d := range f.debugExprs {
+			if _, ok := m[d.expr]; !ok {
+				m[d.expr] = d.exprValue
+			}
+		}
+		f.exprToValue = m
+		f.debugExprs = nil
+	})
+	v, ok := f.exprToValue[e]
+	return v, ok
 }
 
 // --- Lookup functions for source-level named entities (types.Objects) ---
@@ -269,7 +288,7 @@ func (prog *Program) VarValue(obj *types.Var, pkg *Package, ref []ast.Node) (val
 	}
 
 	// Other ident?
-	if v, ok := fn.exprToValue[id]; ok {
+	if v, ok := fn.lookupExpr(id); ok {
 		return v.v, v.isAddr
 	}
 

@@ -410,11 +410,15 @@ func (f *Function) finishBody() {
 	}
 
 	if f.debugInfo() {
-		// Turn debug references into a map
-		f.exprToValue = map[ast.Expr]struct {
-			v      Value
-			isAddr bool
-		}{}
+		n := 0
+		for _, b := range f.Blocks {
+			for _, instr := range b.Instrs {
+				if _, ok := instr.(*debugRef); ok {
+					n++
+				}
+			}
+		}
+		f.debugExprs = make([]debugExpr, 0, n)
 		for _, b := range f.Blocks {
 			newInstrs := b.Instrs[:0]
 			for _, instr := range b.Instrs {
@@ -422,12 +426,7 @@ func (f *Function) finishBody() {
 					if refs := instr.X.Referrers(); refs != nil {
 						*refs = removeInstr(*refs, instr)
 					}
-					if _, ok := f.exprToValue[instr.Expr]; !ok {
-						f.exprToValue[instr.Expr] = struct {
-							v      Value
-							isAddr bool
-						}{instr.X, instr.IsAddr}
-					}
+					f.debugExprs = append(f.debugExprs, debugExpr{instr.Expr, exprValue{instr.X, instr.IsAddr}})
 					continue
 				}
 				newInstrs = append(newInstrs, instr)

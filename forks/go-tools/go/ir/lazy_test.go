@@ -217,3 +217,81 @@ func (*A) N() {}
 		}
 	}
 }
+
+func TestValueForExprConcurrent(t *testing.T) {
+	const src = `package p
+
+func f(xs []int) (sum int) {
+	for i, x := range xs {
+		y := x * i
+		if y > 10 {
+			sum += y
+		}
+	}
+	return sum
+}
+`
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "p.go", src, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	info := &types.Info{
+		Types:      map[ast.Expr]types.TypeAndValue{},
+		Defs:       map[*ast.Ident]types.Object{},
+		Uses:       map[*ast.Ident]types.Object{},
+		Selections: map[*ast.SelectorExpr]*types.Selection{},
+		Scopes:     map[ast.Node]*types.Scope{},
+		Instances:  map[*ast.Ident]types.Instance{},
+	}
+	pkg, err := new(types.Config).Check("p", fset, []*ast.File{file}, info)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prog := ir.NewProgram(fset, ir.GlobalDebug)
+	irpkg := prog.CreatePackage(pkg, []*ast.File{file}, info, false)
+	irpkg.Build()
+	fn := irpkg.Func("f")
+
+	var exprs []ast.Expr
+	ast.Inspect(file, func(n ast.Node) bool {
+		if e, ok := n.(ast.Expr); ok {
+			exprs = append(exprs, e)
+		}
+		return true
+	})
+
+	type result struct {
+		v      ir.Value
+		isAddr bool
+	}
+	const workers = 8
+	results := make([][]result, workers)
+	var wg sync.WaitGroup
+	for w := range workers {
+		wg.Go(func() {
+			got := make([]result, len(exprs))
+			for i, e := range exprs {
+				v, isAddr := fn.ValueForExpr(e)
+				got[i] = result{v, isAddr}
+			}
+			results[w] = got
+		})
+	}
+	wg.Wait()
+
+	found := 0
+	for i := range exprs {
+		if results[0][i].v != nil {
+			found++
+		}
+		for w := 1; w < workers; w++ {
+			if results[w][i] != results[0][i] {
+				t.Fatalf("ValueForExpr(%v) differs between goroutines", exprs[i])
+			}
+		}
+	}
+	if found == 0 {
+		t.Fatal("ValueForExpr found no values; debug info missing")
+	}
+}

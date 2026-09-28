@@ -97,6 +97,16 @@ type Package struct {
 	initVersion map[ast.Expr]string // goversion to use for each global var init expr
 }
 
+type exprValue struct {
+	v      Value
+	isAddr bool
+}
+
+type debugExpr struct {
+	expr ast.Expr
+	exprValue
+}
+
 // A Member is a member of a Go package, implemented by *NamedConst,
 // *Global, *Function, or *Type; they are created by package-level
 // const, var, func and type declarations respectively.
@@ -379,10 +389,11 @@ type Function struct {
 	Pkg    *Package  // enclosing package; nil for shared funcs (wrappers and error.Error)
 	Prog   *Program  // enclosing program
 
-	exprToValue map[ast.Expr]struct {
-		v      Value
-		isAddr bool
-	}
+	// debugExprs holds debug references in instruction order until
+	// exprToValue is first needed; most functions are never queried.
+	debugExprs      []debugExpr
+	exprToValueOnce sync.Once
+	exprToValue     map[ast.Expr]exprValue
 
 	buildshared *task // wait for a shared function to be done building (may be nil if <=1 builder ever needs to wait)
 
