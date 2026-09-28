@@ -19,6 +19,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"unsafe"
 
 	"honnef.co/go/tools/go/types/typeutil"
@@ -80,6 +81,11 @@ type Package struct {
 	init      *Function               // Func("init"); the package's init function
 	debug     bool                    // include full debug info in this package
 	syntax    bool                    // package was loaded from syntax
+
+	// Packages created without syntax populate Members and values on
+	// demand; lazyMu guards both until materialize clears lazy.
+	lazyMu sync.Mutex
+	lazy   atomic.Bool
 
 	// The following fields are set transiently, then cleared
 	// after building.
@@ -1983,6 +1989,7 @@ func (d *debugRef) Object() types.Object { return d.object }
 // Func returns the package-level function of the specified name,
 // or nil if not found.
 func (p *Package) Func(name string) (f *Function) {
+	p.materialize()
 	f, _ = p.Members[name].(*Function)
 	return
 }
@@ -1990,6 +1997,7 @@ func (p *Package) Func(name string) (f *Function) {
 // Var returns the package-level variable of the specified name,
 // or nil if not found.
 func (p *Package) Var(name string) (g *Global) {
+	p.materialize()
 	g, _ = p.Members[name].(*Global)
 	return
 }
@@ -1997,6 +2005,7 @@ func (p *Package) Var(name string) (g *Global) {
 // Const returns the package-level constant of the specified name,
 // or nil if not found.
 func (p *Package) Const(name string) (c *NamedConst) {
+	p.materialize()
 	c, _ = p.Members[name].(*NamedConst)
 	return
 }
@@ -2004,6 +2013,7 @@ func (p *Package) Const(name string) (c *NamedConst) {
 // Type returns the package-level type of the specified name,
 // or nil if not found.
 func (p *Package) Type(name string) (t *Type) {
+	p.materialize()
 	t, _ = p.Members[name].(*Type)
 	return
 }

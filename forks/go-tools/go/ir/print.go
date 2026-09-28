@@ -509,6 +509,7 @@ func (p *Package) WriteTo(w io.Writer) (int64, error) {
 func WritePackage(buf *bytes.Buffer, p *Package) {
 	fmt.Fprintf(buf, "%s:\n", p)
 
+	p.materialize()
 	var names []string
 	maxname := 0
 	for name := range p.Members {
