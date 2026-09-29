@@ -361,6 +361,7 @@ type jsonPackage struct {
 	Name              string
 	Target            string
 	Export            string
+	BuildID           string
 	GoFiles           []string
 	CompiledGoFiles   []string
 	IgnoredGoFiles    []string
@@ -548,6 +549,7 @@ func (state *golistState) createDriverResponse(words ...string) (*DriverResponse
 			ForTest:         p.ForTest,
 			depsErrors:      p.DepsErrors,
 			Module:          p.Module,
+			BuildID:         p.BuildID,
 		}
 
 		if (state.cfg.Mode&typecheckCgo) != 0 && len(p.CgoFiles) != 0 {
@@ -821,7 +823,7 @@ func jsonFlag(cfg *Config, goVersion int) string {
 		addFields("Dir", "CompiledGoFiles")
 	}
 	if cfg.Mode&NeedCompiledGoFiles != 0 {
-		addFields("Dir", "CompiledGoFiles", "Export")
+		addFields("Dir", "CompiledGoFiles", "Export", "BuildID")
 	}
 	if cfg.Mode&NeedImports != 0 {
 		// When imports are requested, DepOnly is used to distinguish between packages
@@ -836,7 +838,7 @@ func jsonFlag(cfg *Config, goVersion int) string {
 	}
 	if usesExportData(cfg) {
 		// Request Dir in the unlikely case Export is not absolute.
-		addFields("Dir", "Export")
+		addFields("Dir", "Export", "BuildID")
 	}
 	if cfg.Mode&NeedForTest != 0 {
 		addFields("ForTest")

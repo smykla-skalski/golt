@@ -482,6 +482,13 @@ type Package struct {
 	// information for the package as provided by the build system.
 	ExportFile string
 
+	// BuildID is the build ID of the compiled package reported by
+	// "go list -export", in actionID/contentID form. The action ID covers
+	// the package's inputs and its dependencies' export data, so clients can
+	// key caches on it instead of hashing sources. It is set with
+	// NeedExportFile and is empty when the package could not be compiled.
+	BuildID string
+
 	// Target is the absolute install path of the .a file, for libraries,
 	// and of the executable file, for binaries.
 	Target string
@@ -620,6 +627,7 @@ type flatPackage struct {
 	EmbedPatterns   []string          `json:",omitempty"`
 	IgnoredFiles    []string          `json:",omitempty"`
 	ExportFile      string            `json:",omitempty"`
+	BuildID         string            `json:",omitempty"`
 	Imports         map[string]string `json:",omitempty"`
 }
 
@@ -645,6 +653,7 @@ func (p *Package) MarshalJSON() ([]byte, error) {
 		EmbedPatterns:   p.EmbedPatterns,
 		IgnoredFiles:    p.IgnoredFiles,
 		ExportFile:      p.ExportFile,
+		BuildID:         p.BuildID,
 	}
 	if len(p.Imports) > 0 {
 		flat.Imports = make(map[string]string, len(p.Imports))
@@ -674,6 +683,7 @@ func (p *Package) UnmarshalJSON(b []byte) error {
 		EmbedPatterns:   flat.EmbedPatterns,
 		IgnoredFiles:    flat.IgnoredFiles,
 		ExportFile:      flat.ExportFile,
+		BuildID:         flat.BuildID,
 	}
 	if len(flat.Imports) > 0 {
 		p.Imports = make(map[string]*Package, len(flat.Imports))
@@ -1014,6 +1024,7 @@ func (ld *loader) refine(response *DriverResponse) ([]*Package, error) {
 		}
 		if ld.requestedMode&NeedExportFile == 0 {
 			ld.pkgs[i].ExportFile = ""
+			ld.pkgs[i].BuildID = ""
 		}
 		if ld.requestedMode&NeedTypes == 0 {
 			ld.pkgs[i].Types = nil
