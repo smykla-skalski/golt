@@ -49,7 +49,9 @@ Dynamic rules are written declaratively with AST patterns, filters, report messa
 			},
 		}).
 		WithContextSetter(func(context *linter.Context) {
-			wrapper.init(context.Log, settings, replacer)
+			wrapper.logger = context.Log
+			wrapper.settings = settings
+			wrapper.replacer = replacer
 		}).
 		WithLoadMode(goanalysis.LoadModeTypesInfo)
 }
@@ -58,30 +60,37 @@ type goCriticWrapper struct {
 	settingsWrapper *settingsWrapper
 	sizes           types.Sizes
 	once            sync.Once
+
+	logger   logutils.Log
+	settings *config.GoCriticSettings
+	replacer *strings.Replacer
 }
 
-func (w *goCriticWrapper) init(logger logutils.Log, settings *config.GoCriticSettings, replacer *strings.Replacer) {
-	if settings == nil {
+// init loads the embedded ruleguard rules, which type-checks packages from
+// source, and the settings that depend on them. It runs on first use rather
+// than at startup, so runs answered entirely from the cache skip it.
+func (w *goCriticWrapper) init() {
+	if w.settings == nil {
 		return
 	}
 
-	w.once.Do(func() {
-		err := checkers.InitEmbeddedRules()
-		if err != nil {
-			logger.Fatalf("%s: %v: setting an explicit GOROOT can fix this problem", linterName, err)
-		}
-	})
+	err := checkers.InitEmbeddedRules()
+	if err != nil {
+		w.logger.Fatalf("%s: %v: setting an explicit GOROOT can fix this problem", linterName, err)
+	}
 
-	settingsWrapper := newSettingsWrapper(logger, settings, replacer)
+	settingsWrapper := newSettingsWrapper(w.logger, w.settings, w.replacer)
 
 	if err := settingsWrapper.Load(); err != nil {
-		logger.Fatalf("%s: invalid settings: %s", linterName, err)
+		w.logger.Fatalf("%s: invalid settings: %s", linterName, err)
 	}
 
 	w.settingsWrapper = settingsWrapper
 }
 
 func (w *goCriticWrapper) run(pass *analysis.Pass) error {
+	w.once.Do(w.init)
+
 	if w.settingsWrapper == nil {
 		return errors.New("the settings wrapper is nil")
 	}
