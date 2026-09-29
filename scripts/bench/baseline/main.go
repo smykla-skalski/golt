@@ -2192,6 +2192,13 @@ func resolveWorkDir(root, target, scenarioDir string) (string, error) {
 	return safeJoin(workDir, scenarioDir)
 }
 
+// softMemoryLimitMiB returns the GOMEMLIMIT for a run: three quarters of the
+// hard RSS limit, since the Go heap limit excludes stacks, runtime metadata and
+// child processes that still count toward the process-tree RSS.
+func softMemoryLimitMiB(maxRSSMiB uint64) uint64 {
+	return maxRSSMiB / 4 * 3
+}
+
 func (r *runner) newBenchmarkCommand(
 	bin binary,
 	workDir string,
@@ -2203,7 +2210,7 @@ func (r *runner) newBenchmarkCommand(
 	environ := replaceEnv(os.Environ(),
 		"GOLANGCI_LINT_CACHE="+cacheDir,
 		fmt.Sprintf("GOMAXPROCS=%d", r.opts.GoMaxProcs),
-		fmt.Sprintf("GOMEMLIMIT=%dMiB", r.opts.MaxRSSMiB),
+		fmt.Sprintf("GOMEMLIMIT=%dMiB", softMemoryLimitMiB(r.opts.MaxRSSMiB)),
 		fmt.Sprintf("GOFLAGS=-p=%d", r.opts.GoMaxProcs),
 		"GOROOT="+r.goRoot,
 		"PATH="+filepath.Join(r.goRoot, "bin")+string(os.PathListSeparator)+os.Getenv("PATH"),
