@@ -25,6 +25,11 @@ on:
         required: true
         default: upstream/main
         type: string
+      golt_env:
+        description: Space-separated GOLT_* settings exported for both binaries (only golt reads them)
+        required: false
+        default: ''
+        type: string
 
 permissions:
   contents: read
@@ -114,7 +119,16 @@ jobs:
           MODE: ${{ matrix.case.mode }}
           ORDER: ${{ matrix.order }}
           PROFILES: ${{ inputs.capture_profiles || false }}
+          GOLT_ENV: ${{ inputs.golt_env || '' }}
         run: |
+          read -ra golt_settings <<< "${GOLT_ENV}"
+          for setting in "${golt_settings[@]}"; do
+            if [[ ! "${setting}" =~ ^GOLT_[A-Z_]+=[A-Za-z0-9._-]*$ ]]; then
+              echo "invalid golt_env setting: ${setting}" >&2
+              exit 1
+            fi
+            export "${setting?}"
+          done
           chmod +x dist/bench/bin/fork dist/bench/bin/upstream
           binary_order=fork-first
           if [[ "${ORDER}" == "baseline-first" ]]; then
