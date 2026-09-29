@@ -28,6 +28,20 @@
       }
     },
     {
+      "name": "kuma-full",
+      "url": "https://github.com/kumahq/kuma.git",
+      "revision": "12fbf5f561e00b5f71eb5e72dc82e1a9eb4f9e87",
+      "config": ".golangci.yml",
+      "modules": ["."],
+      "tests": false,
+      "packages": ["./..."],
+      "profile_module": ".",
+      "edit": {
+        "file": "api/system/v1alpha1/datasource_helpers.go",
+        "append": "// golangci-bench edit {{N}}"
+      }
+    },
+    {
       "name": "multi-module",
       "url": "https://github.com/smykla-skalski/golt.git",
       "revision": "2b3d9864a624c76500478b1bc7b0414cbf032f96",
