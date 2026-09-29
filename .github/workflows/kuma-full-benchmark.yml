@@ -1,0 +1,114 @@
+name: Kuma full benchmark vs upstream
+
+on:
+  schedule:
+    - cron: "0 3 * * 0"
+  workflow_dispatch:
+    inputs:
+      runs:
+        description: Timed runs per binary per order
+        required: true
+        default: '3'
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: kuma-full-benchmark
+  cancel-in-progress: false
+
+env:
+  MAX_WALL_REGRESSION: '5'
+  RUNS: ${{ inputs.runs || '3' }}
+
+jobs:
+  benchmark:
+    if: github.repository == 'smykla-skalski/golt'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 340
+    env:
+      GOMAXPROCS: 4
+      GOFLAGS: -p=4
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: 1.26.0
+          cache: false
+
+      - name: Build golt and upstream
+        run: |
+          git fetch --no-tags https://github.com/golangci/golangci-lint.git main:refs/remotes/upstream/main
+          go run ./scripts/bench/build_pair \
+            --candidate-ref HEAD \
+            --upstream-ref upstream/main \
+            --baseline-mode exact \
+            --out-dir dist/bench/bin \
+            --build-timeout 10m \
+            --max-memory-mib 4096 \
+            --go-max-procs 4 \
+            --nice 10
+
+      - name: Benchmark scenarios
+        shell: bash
+        run: |
+          scenarios=(
+            "goanalysis cold"
+            "configured warm"
+            "configured-new edit"
+          )
+          {
+            echo "## Kuma ./... — golt vs upstream golangci-lint"
+            echo
+            echo "golt \`$(git rev-parse --short HEAD)\` vs upstream \`$(git rev-parse --short upstream/main)\`; 4 CPUs, 8 GiB, ${RUNS} runs per binary per order."
+            echo
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          status=0
+          for entry in "${scenarios[@]}"; do
+            read -r scenario mode <<< "${entry}"
+            out="dist/bench/kuma-full/${scenario}-${mode}"
+            common_args=(
+              --manifest scripts/bench/baseline.json
+              --workload kuma-full
+              --scenario "${scenario}"
+              --concurrency 4
+              --cache-mode "${mode}"
+              --runs "${RUNS}"
+              --run-timeout 20m
+              --max-rss-mib 8192
+              --go-max-procs 4
+              --nice 10
+            )
+            if ! go run ./scripts/bench/baseline --fork-bin dist/bench/bin/fork --upstream-bin dist/bench/bin/upstream \
+                --out "${out}/candidate-first" "${common_args[@]}" ||
+              ! go run ./scripts/bench/baseline --fork-bin dist/bench/bin/fork --upstream-bin dist/bench/bin/upstream \
+                --binary-order upstream-first --out "${out}/baseline-first" "${common_args[@]}"; then
+              echo "::error::kuma-full/${scenario}/${mode} benchmark failed"
+              status=1
+              continue
+            fi
+
+            echo "### ${scenario} (${mode})" >> "$GITHUB_STEP_SUMMARY"
+            if ! go run ./scripts/bench/summary -max-wall-regression "${MAX_WALL_REGRESSION}" "${out}" >> "$GITHUB_STEP_SUMMARY"; then
+              echo "::error::kuma-full/${scenario}/${mode}: golt is slower than upstream beyond ${MAX_WALL_REGRESSION}%"
+              status=1
+            fi
+          done
+          exit "${status}"
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: kuma-full-benchmark
+          path: |
+            dist/bench/bin/pair.json
+            dist/bench/kuma-full
+          if-no-files-found: error
+          retention-days: 90
