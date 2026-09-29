@@ -40,6 +40,8 @@ jobs:
         with:
           advanced-security: false
           annotations: true
+          # forks/*/.github workflows never run in golt.
+          inputs: .github
 
   check-local-install-script:
     name: Installation script (local)
