@@ -12,9 +12,11 @@ var _ Processor = (*UniqByLine)(nil)
 
 // UniqByLine filters reports to keep only one report by line of code.
 //
-// Linters finish in a nondeterministic order, so the kept report is the one
-// that sorts first by column, linter and text rather than the first received;
-// the same issues then always produce the same output.
+// Issues arrive grouped by linter, so the first linter to report on a line
+// wins, as upstream. Within one linter, reports on the same line arrive in a
+// nondeterministic order (e.g. gosec G302 and G304), so the one that sorts
+// first by column and text is kept; the same issues then always give the same
+// output.
 type UniqByLine struct {
 	fileLineCounter fileLineCounter
 	enabled         bool
@@ -36,6 +38,13 @@ func (p *UniqByLine) Process(issues []*result.Issue) ([]*result.Issue, error) {
 		return issues, nil
 	}
 
+	linterRank := map[string]int{}
+	for _, issue := range issues {
+		if _, ok := linterRank[issue.FromLinter]; !ok {
+			linterRank[issue.FromLinter] = len(linterRank)
+		}
+	}
+
 	kept := map[fileLine]*result.Issue{}
 	for _, issue := range issues {
 		if p.fileLineCounter.GetCount(issue) >= uniqByLineLimit {
@@ -43,7 +52,7 @@ func (p *UniqByLine) Process(issues []*result.Issue) ([]*result.Issue, error) {
 		}
 
 		key := fileLineOf(issue)
-		if current, ok := kept[key]; !ok || compareUniqCandidates(issue, current) < 0 {
+		if current, ok := kept[key]; !ok || compareUniqCandidates(linterRank, issue, current) < 0 {
 			kept[key] = issue
 		}
 	}
@@ -75,10 +84,10 @@ func fileLineOf(issue *result.Issue) fileLine {
 	return fileLine{file: issue.FilePath(), line: issue.Line()}
 }
 
-func compareUniqCandidates(a, b *result.Issue) int {
+func compareUniqCandidates(linterRank map[string]int, a, b *result.Issue) int {
 	return cmp.Or(
+		cmp.Compare(linterRank[a.FromLinter], linterRank[b.FromLinter]),
 		cmp.Compare(a.Column(), b.Column()),
-		cmp.Compare(a.FromLinter, b.FromLinter),
 		cmp.Compare(a.Text, b.Text),
 	)
 }
