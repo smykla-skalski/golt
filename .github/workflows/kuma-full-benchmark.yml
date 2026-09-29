@@ -10,6 +10,11 @@ on:
         required: true
         default: '3'
         type: string
+      capture_profiles:
+        description: Capture CPU, heap and trace profiles of the cold scenario
+        required: true
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -96,11 +101,16 @@ jobs:
           SCENARIO: ${{ matrix.case.scenario }}
           MODE: ${{ matrix.case.mode }}
           ORDER: ${{ matrix.order }}
+          PROFILES: ${{ inputs.capture_profiles || false }}
         run: |
           chmod +x dist/bench/bin/fork dist/bench/bin/upstream
           binary_order=fork-first
           if [[ "${ORDER}" == "baseline-first" ]]; then
             binary_order=upstream-first
+          fi
+          profile_args=()
+          if [[ "${PROFILES}" == "true" && "${MODE}" == "cold" && "${ORDER}" == "candidate-first" ]]; then
+            profile_args=(--profiles --profile-concurrency 4)
           fi
           go run ./scripts/bench/baseline \
             --manifest scripts/bench/baseline.json \
@@ -116,7 +126,8 @@ jobs:
             --run-timeout 20m \
             --max-rss-mib 8192 \
             --go-max-procs 4 \
-            --nice 10
+            --nice 10 \
+            "${profile_args[@]}"
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
