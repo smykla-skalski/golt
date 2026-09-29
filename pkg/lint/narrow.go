@@ -13,7 +13,9 @@ const envDiffAnalyzeAll = "GOLANGCI_LINT_DIFF_ANALYZE_ALL"
 
 // moduleFiles are files whose changes can produce issues outside any package,
 // so narrowing is disabled when they change.
-var moduleFiles = []string{"go.mod", "go.work"}
+const goModFile = "go.mod"
+
+var moduleFiles = []string{goModFile, "go.work"}
 
 // changedPackages selects the packages whose issues can survive the diff filter:
 // the filter only keeps issues located in changed files, and always keeps typecheck issues.
