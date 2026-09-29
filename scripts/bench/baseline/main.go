@@ -63,7 +63,7 @@ const (
 	compatibilityCancelLimit    = 5 * time.Second
 	processExitWait             = time.Second
 	processExitPoll             = 10 * time.Millisecond
-	benchmarkRunMarkerEnv       = "GOLANGCI_BENCH_RUN_ID"
+	benchmarkRunMarkerEnv       = "BENCH_RUN_ID"
 )
 
 type manifest struct {
