@@ -36,16 +36,16 @@ type sample struct {
 }
 
 func main() {
-	fs := flag.NewFlagSet("summary", flag.ExitOnError)
-	maxRegression := fs.Float64("max-wall-regression", 0,
+	flags := flag.NewFlagSet("summary", flag.ExitOnError)
+	maxRegression := flags.Float64("max-wall-regression", 0,
 		"fail when the candidate's median wall time exceeds the baseline's by more than this percentage (0 disables)")
-	_ = fs.Parse(os.Args[1:])
-	if fs.NArg() != 1 {
+	_ = flags.Parse(os.Args[1:])
+	if flags.NArg() != 1 {
 		_, _ = fmt.Fprintln(os.Stderr, "usage: summary [-max-wall-regression pct] <results-root>")
 		os.Exit(2)
 	}
 
-	samples, err := load(fs.Arg(0))
+	samples, err := load(flags.Arg(0))
 	if err == nil {
 		err = write(os.Stdout, samples)
 	}
