@@ -15,6 +15,16 @@ on:
         required: true
         default: false
         type: boolean
+      candidate_ref:
+        description: Candidate git ref (e.g. a commit SHA or origin/<branch>)
+        required: true
+        default: HEAD
+        type: string
+      baseline_ref:
+        description: Baseline git ref (upstream/main is golangci/golangci-lint main)
+        required: true
+        default: upstream/main
+        type: string
 
 permissions:
   contents: read
@@ -26,6 +36,8 @@ concurrency:
 env:
   MAX_WALL_REGRESSION: '5'
   RUNS: ${{ inputs.runs || '3' }}
+  CANDIDATE_REF: ${{ inputs.candidate_ref || 'HEAD' }}
+  BASELINE_REF: ${{ inputs.baseline_ref || 'upstream/main' }}
 
 jobs:
   build:
@@ -47,8 +59,8 @@ jobs:
         run: |
           git fetch --no-tags https://github.com/golangci/golangci-lint.git main:refs/remotes/upstream/main
           go run ./scripts/bench/build_pair \
-            --candidate-ref HEAD \
-            --upstream-ref upstream/main \
+            --candidate-ref "${CANDIDATE_REF}" \
+            --upstream-ref "${BASELINE_REF}" \
             --baseline-mode exact \
             --out-dir dist/bench/bin \
             --build-timeout 10m \
@@ -179,9 +191,9 @@ jobs:
         run: |
           git fetch --no-tags https://github.com/golangci/golangci-lint.git main:refs/remotes/upstream/main
           {
-            echo "## Kuma ./... — golt vs upstream golangci-lint"
+            echo "## Kuma ./... — candidate vs baseline"
             echo
-            echo "golt \`$(git rev-parse --short HEAD)\` vs upstream \`$(git rev-parse --short upstream/main)\`; 4 CPUs, 8 GiB, ${RUNS} runs per binary per order; orders ran on separate runners."
+            echo "candidate \`${CANDIDATE_REF}\` ($(git rev-parse --short "${CANDIDATE_REF}")) vs baseline \`${BASELINE_REF}\` ($(git rev-parse --short "${BASELINE_REF}")); 4 CPUs, 8 GiB, ${RUNS} runs per binary per order; orders ran on separate runners."
             echo
           } >> "$GITHUB_STEP_SUMMARY"
 
