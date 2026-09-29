@@ -180,9 +180,18 @@ func hasWorkerCapability(capabilities []string, expected string) bool {
 }
 
 func executeWorkerRun(info BuildInfo, run workerprotocol.RunPayload) (lifecycle.Report, int, error) {
+	report, exitCode, _, err := executeInProcessRun(info, run)
+
+	return report, exitCode, err
+}
+
+// executeInProcessRun runs one run command in this process. fatal reports a
+// process exit requested mid-run (e.g. Fatalf): the calling goroutine is parked
+// and process state is not restored, so the process must exit afterwards.
+func executeInProcessRun(info BuildInfo, run workerprotocol.RunPayload) (report lifecycle.Report, exitCode int, fatal bool, err error) {
 	restore, err := applyWorkerProcessState(run)
 	if err != nil {
-		return lifecycle.Report{}, exitcodes.Failure, err
+		return lifecycle.Report{}, exitcodes.Failure, false, err
 	}
 	restoreState := true
 	defer func() {
@@ -197,13 +206,13 @@ func executeWorkerRun(info BuildInfo, run workerprotocol.RunPayload) (lifecycle.
 		lifecycleRecorder:   recorder,
 	})
 	if !isWorkerRun(root, run.Args) {
-		return lifecycle.Report{}, exitcodes.Failure, errors.New("worker only accepts the run command")
+		return lifecycle.Report{}, exitcodes.Failure, false, errors.New("worker only accepts the run command")
 	}
 	if setupErr := workerFatalSetupError(); setupErr != nil {
 		root.log.Errorf("%s", setupErr)
 		recorder.Finish(exitcodes.Failure, setupErr, nil)
 
-		return recorder.Snapshot(), exitcodes.Failure, nil
+		return recorder.Snapshot(), exitcodes.Failure, false, nil
 	}
 	root.cmd.SetArgs(run.Args)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -217,9 +226,9 @@ func executeWorkerRun(info BuildInfo, run workerprotocol.RunPayload) (lifecycle.
 			recorder.Finish(processExit.code, processExit, nil)
 		}
 
-		return recorder.Snapshot(), processExit.code, nil
+		return recorder.Snapshot(), processExit.code, true, nil
 	}
-	exitCode := root.run.exitCode
+	exitCode = root.run.exitCode
 	if err != nil {
 		exitCode = exitcodes.Failure
 		if recorder.Snapshot().Outcome == nil {
@@ -227,7 +236,7 @@ func executeWorkerRun(info BuildInfo, run workerprotocol.RunPayload) (lifecycle.
 		}
 	}
 
-	return recorder.Snapshot(), exitCode, err
+	return recorder.Snapshot(), exitCode, false, err
 }
 
 type workerProcessExit struct {
