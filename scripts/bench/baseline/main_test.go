@@ -453,7 +453,7 @@ func TestNewBenchmarkCommandAppliesLimits(t *testing.T) {
 	cmd := r.newBenchmarkCommand(
 		binary{Path: "/bin/linter"}, "/work", "/cache", []string{"run"}, nil, io.Discard,
 	)
-	for _, expected := range []string{"GOMAXPROCS=2", "GOMEMLIMIT=2048MiB", "GOFLAGS=-p=2"} {
+	for _, expected := range []string{"GOMAXPROCS=2", "GOMEMLIMIT=1536MiB", "GOFLAGS=-p=2"} {
 		if !slices.Contains(cmd.Env, expected) {
 			t.Fatalf("expected %q in environment", expected)
 		}
