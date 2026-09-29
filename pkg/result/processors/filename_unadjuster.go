@@ -1,8 +1,10 @@
 package processors
 
 import (
+	"bytes"
 	"go/parser"
 	"go/token"
+	"os"
 	"slices"
 	"strings"
 	"sync"
@@ -96,7 +98,17 @@ func processUnadjusterPkg(m *adjustMap, pkg *packages.Package, log logutils.Log)
 }
 
 func processUnadjusterFile(filename string, m *adjustMap, log logutils.Log, fset *token.FileSet) {
-	syntax, err := parser.ParseFile(fset, filename, nil, parser.ParseComments)
+	src, err := os.ReadFile(filename)
+	if err != nil {
+		// Error will be reported by typecheck
+		return
+	}
+
+	if !hasLineDirective(src) {
+		return
+	}
+
+	syntax, err := parser.ParseFile(fset, filename, src, parser.ParseComments)
 	if err != nil {
 		// Error will be reported by typecheck
 		return
@@ -128,4 +140,11 @@ func processUnadjusterFile(filename string, m *adjustMap, log logutils.Log, fset
 
 		return fset.PositionFor(tokenFile.Pos(adjustedPos.Offset), false)
 	}
+}
+
+// hasLineDirective reports whether src can contain a line directive, the only
+// way a file's positions can differ from its real name and lines. Skipping the
+// full parse of every other file keeps warm runs from re-parsing all sources.
+func hasLineDirective(src []byte) bool {
+	return bytes.Contains(src, []byte("//line ")) || bytes.Contains(src, []byte("/*line "))
 }
