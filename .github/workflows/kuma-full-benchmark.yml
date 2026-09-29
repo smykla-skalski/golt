@@ -11,7 +11,7 @@ on:
         default: '3'
         type: string
       capture_profiles:
-        description: Capture CPU, heap and trace profiles of the cold scenario
+        description: Capture CPU, heap and trace profiles for each scenario
         required: true
         default: false
         type: boolean
@@ -121,7 +121,7 @@ jobs:
             binary_order=upstream-first
           fi
           profile_args=()
-          if [[ "${PROFILES}" == "true" && "${MODE}" == "cold" && "${ORDER}" == "candidate-first" ]]; then
+          if [[ "${PROFILES}" == "true" && "${ORDER}" == "candidate-first" ]]; then
             profile_args=(--profiles --profile-concurrency 4)
           fi
           go run ./scripts/bench/baseline \
