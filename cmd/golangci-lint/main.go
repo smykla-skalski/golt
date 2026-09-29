@@ -22,6 +22,8 @@ var (
 )
 
 func main() {
+	configureGC()
+
 	info := createBuildInfo()
 	if handled, exitCode, err := commands.TryExecuteWorker(info); handled {
 		if err != nil {
