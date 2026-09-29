@@ -23,13 +23,10 @@ env:
   RUNS: ${{ inputs.runs || '3' }}
 
 jobs:
-  benchmark:
+  build:
     if: github.repository == 'smykla-skalski/golt'
     runs-on: ubuntu-24.04
-    timeout-minutes: 340
-    env:
-      GOMAXPROCS: 4
-      GOFLAGS: -p=4
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -54,61 +51,135 @@ jobs:
             --go-max-procs 4 \
             --nice 10
 
-      - name: Benchmark scenarios
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: kuma-full-binaries
+          path: dist/bench/bin
+          if-no-files-found: error
+          retention-days: 1
+
+  # Each job runs both binaries on the same runner, so every comparison stays
+  # paired; scenarios and execution orders only spread across runners.
+  bench:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 340
+    strategy:
+      fail-fast: false
+      matrix:
+        case:
+          - {scenario: goanalysis, mode: cold}
+          - {scenario: configured, mode: warm}
+          - {scenario: configured-new, mode: edit}
+        order: [candidate-first, baseline-first]
+    name: ${{ matrix.case.scenario }} (${{ matrix.case.mode }}, ${{ matrix.order }})
+    env:
+      GOMAXPROCS: 4
+      GOFLAGS: -p=4
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: 1.26.0
+          cache: false
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: kuma-full-binaries
+          path: dist/bench/bin
+
+      - name: Benchmark
+        env:
+          SCENARIO: ${{ matrix.case.scenario }}
+          MODE: ${{ matrix.case.mode }}
+          ORDER: ${{ matrix.order }}
+        run: |
+          chmod +x dist/bench/bin/fork dist/bench/bin/upstream
+          binary_order=fork-first
+          if [[ "${ORDER}" == "baseline-first" ]]; then
+            binary_order=upstream-first
+          fi
+          go run ./scripts/bench/baseline \
+            --manifest scripts/bench/baseline.json \
+            --fork-bin dist/bench/bin/fork \
+            --upstream-bin dist/bench/bin/upstream \
+            --binary-order "${binary_order}" \
+            --out "results/${ORDER}" \
+            --workload kuma-full \
+            --scenario "${SCENARIO}" \
+            --concurrency 4 \
+            --cache-mode "${MODE}" \
+            --runs "${RUNS}" \
+            --run-timeout 20m \
+            --max-rss-mib 8192 \
+            --go-max-procs 4 \
+            --nice 10
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: kuma-full-${{ matrix.case.scenario }}-${{ matrix.case.mode }}-${{ matrix.order }}
+          path: |
+            results
+            !results/**/workloads/**
+            !results/**/cache/**
+          if-no-files-found: error
+          retention-days: 90
+
+  summary:
+    needs: [build, bench]
+    if: always() && needs.build.result == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: 1.26.0
+          cache: false
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: kuma-full-goanalysis-cold-*
+          path: dist/goanalysis-cold
+          merge-multiple: true
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: kuma-full-configured-warm-*
+          path: dist/configured-warm
+          merge-multiple: true
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: kuma-full-configured-new-edit-*
+          path: dist/configured-new-edit
+          merge-multiple: true
+
+      - name: Summarize
         shell: bash
         run: |
-          scenarios=(
-            "goanalysis cold"
-            "configured warm"
-            "configured-new edit"
-          )
+          git fetch --no-tags https://github.com/golangci/golangci-lint.git main:refs/remotes/upstream/main
           {
             echo "## Kuma ./... — golt vs upstream golangci-lint"
             echo
-            echo "golt \`$(git rev-parse --short HEAD)\` vs upstream \`$(git rev-parse --short upstream/main)\`; 4 CPUs, 8 GiB, ${RUNS} runs per binary per order."
+            echo "golt \`$(git rev-parse --short HEAD)\` vs upstream \`$(git rev-parse --short upstream/main)\`; 4 CPUs, 8 GiB, ${RUNS} runs per binary per order; orders ran on separate runners."
             echo
           } >> "$GITHUB_STEP_SUMMARY"
 
           status=0
-          for entry in "${scenarios[@]}"; do
-            read -r scenario mode <<< "${entry}"
-            out="dist/bench/kuma-full/${scenario}-${mode}"
-            common_args=(
-              --manifest scripts/bench/baseline.json
-              --workload kuma-full
-              --scenario "${scenario}"
-              --concurrency 4
-              --cache-mode "${mode}"
-              --runs "${RUNS}"
-              --run-timeout 20m
-              --max-rss-mib 8192
-              --go-max-procs 4
-              --nice 10
-            )
-            if ! go run ./scripts/bench/baseline --fork-bin dist/bench/bin/fork --upstream-bin dist/bench/bin/upstream \
-                --out "${out}/candidate-first" "${common_args[@]}" ||
-              ! go run ./scripts/bench/baseline --fork-bin dist/bench/bin/fork --upstream-bin dist/bench/bin/upstream \
-                --binary-order upstream-first --out "${out}/baseline-first" "${common_args[@]}"; then
-              echo "::error::kuma-full/${scenario}/${mode} benchmark failed"
-              status=1
-              continue
-            fi
-
-            echo "### ${scenario} (${mode})" >> "$GITHUB_STEP_SUMMARY"
-            if ! go run ./scripts/bench/summary -max-wall-regression "${MAX_WALL_REGRESSION}" "${out}" >> "$GITHUB_STEP_SUMMARY"; then
-              echo "::error::kuma-full/${scenario}/${mode}: golt is slower than upstream beyond ${MAX_WALL_REGRESSION}%"
+          for name in goanalysis-cold configured-warm configured-new-edit; do
+            echo "### ${name}" >> "$GITHUB_STEP_SUMMARY"
+            if ! go run ./scripts/bench/summary -max-wall-regression "${MAX_WALL_REGRESSION}" "dist/${name}" >> "$GITHUB_STEP_SUMMARY"; then
+              echo "::error::${name}: missing results or golt slower than upstream beyond ${MAX_WALL_REGRESSION}%"
               status=1
             fi
           done
           exit "${status}"
-
-      - name: Upload results
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: kuma-full-benchmark
-          path: |
-            dist/bench/bin/pair.json
-            dist/bench/kuma-full
-          if-no-files-found: error
-          retention-days: 90
