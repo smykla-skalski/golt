@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -101,6 +102,24 @@ func (c *Checker) IsNew(filePath string, line int) (hunkPos int, isNew bool) {
 	}
 
 	return 0, false
+}
+
+// ChangedFiles returns the sorted paths of files present in the patch or listed in [Checker.NewFiles].
+// Only issues located in these files can be reported as new by [Checker.IsNew].
+// Patch paths are relative to the current working directory; [Checker.NewFiles] entries are returned as given.
+//
+// WARNING: it requires to call [Checker.Prepare] before call this method to load the changes from patch.
+func (c *Checker) ChangedFiles() []string {
+	files := make([]string, 0, len(c.changes))
+	for file := range c.changes {
+		if file != "" {
+			files = append(files, file)
+		}
+	}
+
+	sort.Strings(files)
+
+	return files
 }
 
 // IsNewIssue checks whether issue found by linter is new: it was found in changed lines.

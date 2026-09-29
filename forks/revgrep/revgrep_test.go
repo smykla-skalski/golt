@@ -297,3 +297,31 @@ func rewriteAbs(t *testing.T, line string) string {
 
 	return strings.TrimPrefix(line, cwd+string(filepath.Separator))
 }
+
+func TestChecker_ChangedFiles(t *testing.T) {
+	diff := []byte(`--- a/b.go
++++ b/b.go
+@@ -1,1 +1,1 @@
+-func Old() {}
++func New() {}
+--- a/dir/a.go
++++ b/dir/a.go
+@@ -1,2 +1,1 @@
+ // comment
+-func Removed() {}
+`)
+
+	checker := Checker{
+		Patch:    bytes.NewReader(diff),
+		NewFiles: []string{"/abs/untracked.go"},
+	}
+
+	if err := checker.Prepare(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	want := []string{"/abs/untracked.go", "b.go", "dir/a.go"}
+	if have := checker.ChangedFiles(); !reflect.DeepEqual(have, want) {
+		t.Errorf("unexpected files:\nhave: %#v\nwant: %#v", have, want)
+	}
+}
