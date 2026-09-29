@@ -122,7 +122,10 @@ jobs:
         if: always()
         with:
           name: kuma-full-${{ matrix.case.scenario }}-${{ matrix.case.mode }}-${{ matrix.order }}
-          path: results
+          path: |
+            results
+            !results/**/workloads/**
+            !results/**/cache/**
           if-no-files-found: error
           retention-days: 90
 

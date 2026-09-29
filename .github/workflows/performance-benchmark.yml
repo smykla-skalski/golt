@@ -149,5 +149,7 @@ jobs:
           path: |
             dist/bench/bin/pair.json
             dist/bench/hosted
+            !dist/bench/hosted/**/workloads/**
+            !dist/bench/hosted/**/cache/**
           if-no-files-found: error
           retention-days: 14
