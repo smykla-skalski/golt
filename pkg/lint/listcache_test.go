@@ -82,9 +82,11 @@ func newTestListCache(t *testing.T, dir string) (*listCache, *packages.Config) {
 func loadAndStore(t *testing.T, lc *listCache, conf *packages.Config) []*packages.Package {
 	t.Helper()
 
+	loadStart := time.Now()
+
 	pkgs, err := packages.Load(conf, "./...")
 	require.NoError(t, err)
-	require.NoError(t, lc.store(pkgs))
+	require.NoError(t, lc.store(pkgs, loadStart))
 
 	return pkgs
 }
@@ -209,6 +211,42 @@ func TestListCache_skipsResultsWithErrors(t *testing.T) {
 
 	_, ok := lc.load()
 	assert.False(t, ok)
+}
+
+func TestListCache_skipsRacyResults(t *testing.T) {
+	testCases := []struct {
+		desc   string
+		change func(t *testing.T, dir string)
+	}{
+		{
+			desc: "file edited just before loading",
+			change: func(t *testing.T, dir string) {
+				t.Helper()
+				require.NoError(t, os.WriteFile(filepath.Join(dir, "b", "b.go"), []byte("package b\n\nvar B = 1\n"), 0o600))
+			},
+		},
+		{
+			desc: "package added just before loading",
+			change: func(t *testing.T, dir string) {
+				t.Helper()
+				require.NoError(t, os.MkdirAll(filepath.Join(dir, "c"), 0o750))
+			},
+		},
+	}
+
+	for _, test := range testCases {
+		t.Run(test.desc, func(t *testing.T) {
+			dir := writeTestModule(t)
+			lc, conf := newTestListCache(t, dir)
+
+			test.change(t, dir)
+
+			loadAndStore(t, lc, conf)
+
+			_, err := os.Stat(lc.path())
+			assert.ErrorIs(t, err, fs.ErrNotExist)
+		})
+	}
 }
 
 func TestListCache_key(t *testing.T) {

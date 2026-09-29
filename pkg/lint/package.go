@@ -122,13 +122,15 @@ func (l *PackageLoader) loadWithListCache(ctx context.Context, conf *packages.Co
 		}
 	}
 
+	loadStart := time.Now()
+
 	pkgs, err := packages.Load(conf, args...)
 	if err != nil {
 		return nil, err
 	}
 
 	if lc != nil {
-		if err := lc.store(pkgs); err != nil {
+		if err := lc.store(pkgs, loadStart); err != nil {
 			l.log.Warnf("Failed to cache go list result: %v", err)
 		}
 	}
