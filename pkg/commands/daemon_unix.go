@@ -38,7 +38,10 @@ const (
 	envDaemonID    = "GOLT_DAEMON_FINGERPRINT"
 	envDaemonIdle  = "GOLT_DAEMON_IDLE"
 
-	daemonDefaultIdle   = 15 * time.Minute
+	daemonDefaultIdle = 15 * time.Minute
+	// daemonReleaseDelay postpones returning memory to the OS until runs stop
+	// arriving back to back.
+	daemonReleaseDelay  = 2 * time.Second
 	daemonStartTimeout  = 5 * time.Second
 	daemonStartPoll     = 10 * time.Millisecond
 	daemonMaxRequest    = 4 << 20
@@ -497,23 +500,41 @@ func serveDaemon(info BuildInfo, socket string) error {
 		idle = value
 	}
 
+	lastRun := time.Now()
+	released := true
+
 	for {
-		if err := listener.SetDeadline(time.Now().Add(idle)); err != nil {
+		deadline := lastRun.Add(idle)
+		if !released {
+			deadline = lastRun.Add(min(daemonReleaseDelay, idle))
+		}
+
+		if err := listener.SetDeadline(deadline); err != nil {
 			return err
 		}
 
 		conn, err := listener.AcceptUnix()
 		if err != nil {
-			if errors.Is(err, os.ErrDeadlineExceeded) {
-				_ = os.Remove(socket)
-
-				return nil
+			if !errors.Is(err, os.ErrDeadlineExceeded) {
+				return err
 			}
 
-			return err
+			if !released {
+				debug.FreeOSMemory()
+				released = true
+
+				continue
+			}
+
+			_ = os.Remove(socket)
+
+			return nil
 		}
 
 		server.handle(conn)
+
+		lastRun = time.Now()
+		released = false
 	}
 }
 
@@ -560,8 +581,6 @@ func (s *daemonServer) handle(conn *net.UnixConn) {
 
 	s.active.Store(nil)
 	s.reply(conn, reply)
-
-	debug.FreeOSMemory()
 }
 
 // attach makes the client's stdio, environment and terminal state this
