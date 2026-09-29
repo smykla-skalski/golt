@@ -1,6 +1,6 @@
 version: 2
 
-# Automaat fork release: GitHub assets only, named like upstream so
+# golt release: GitHub assets only, named like upstream so
 # installers keyed on "<name>-<version>-<os>-<arch>" keep working.
 project_name: golangci-lint
 
@@ -39,12 +39,12 @@ changelog:
 
 release:
   github:
-    owner: Automaat
-    name: golangci-lint
-  # Fork tags are semver pre-releases (vX.Y.Z-automaat.N); installers skip
+    owner: smykla-skalski
+    name: golt
+  # Fork tags are semver pre-releases (vX.Y.Z-golt.N); installers skip
   # pre-releases when resolving "latest".
   prerelease: 'false'
   make_latest: 'true'
   header: |
-    Automaat fork of golangci-lint {{ .Tag }}. Built against patched
-    `golang.org/x/tools` and `honnef.co/go/tools`; see `go version -m`.
+    golt {{ .Tag }}: golangci-lint built against the patched
+    `golang.org/x/tools`, `honnef.co/go/tools` and revgrep in `forks/`.

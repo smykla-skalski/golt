@@ -59,7 +59,7 @@ concurrency:
 
 jobs:
   benchmark:
-    if: github.repository == 'Automaat/golangci-lint'
+    if: github.repository == 'smykla-skalski/golt'
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     env:

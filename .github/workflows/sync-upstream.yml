@@ -14,16 +14,29 @@ concurrency:
 
 jobs:
   sync:
-    if: github.repository == 'Automaat/golangci-lint'
+    if: github.repository == 'smykla-skalski/golt'
     name: Merge upstream/main
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
-      - name: Sync fork
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+
+      # golt is not a GitHub fork, so merge-upstream is unavailable; merge with git
+      # and fail on conflicts, which are resolved manually (forks/README.md).
+      - name: Merge golangci/golangci-lint main
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh api \
-            --method POST \
-            "repos/${GITHUB_REPOSITORY}/merge-upstream" \
-            --field branch=main
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch --no-tags https://github.com/golangci/golangci-lint.git main
+          if git merge-base --is-ancestor FETCH_HEAD HEAD; then
+            echo "Already up to date."
+            exit 0
+          fi
+          git merge --no-edit -m "chore(sync): merge upstream main" FETCH_HEAD
+          git push "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:main
