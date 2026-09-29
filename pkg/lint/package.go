@@ -14,6 +14,7 @@ import (
 	"github.com/ldez/grignotin/goenv"
 	"golang.org/x/tools/go/packages"
 
+	gocache "github.com/golangci/golangci-lint/v2/internal/go/cache"
 	"github.com/golangci/golangci-lint/v2/pkg/config"
 	"github.com/golangci/golangci-lint/v2/pkg/exitcodes"
 	"github.com/golangci/golangci-lint/v2/pkg/goanalysis/load"
@@ -83,7 +84,7 @@ func (l *PackageLoader) loadPackages(ctx context.Context, loadMode packages.Load
 
 	l.debugf("Built loader args are %s", args)
 
-	pkgs, err := packages.Load(conf, args...)
+	pkgs, err := l.loadWithListCache(ctx, conf, args)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load with go/packages: %w", err)
 	}
@@ -104,6 +105,35 @@ func (l *PackageLoader) loadPackages(ctx context.Context, loadMode packages.Load
 	}
 
 	return l.filterTestMainPackages(pkgs), nil
+}
+
+func (l *PackageLoader) loadWithListCache(ctx context.Context, conf *packages.Config, args []string) ([]*packages.Package, error) {
+	cacheRoot, _, err := gocache.DefaultDir()
+	if err != nil || cacheRoot == "off" {
+		cacheRoot = ""
+	}
+
+	lc := newListCache(ctx, cacheRoot, conf, args)
+	if lc != nil {
+		if pkgs, ok := lc.load(); ok {
+			l.debugf("Reused go list result %s", lc.key)
+
+			return pkgs, nil
+		}
+	}
+
+	pkgs, err := packages.Load(conf, args...)
+	if err != nil {
+		return nil, err
+	}
+
+	if lc != nil {
+		if err := lc.store(pkgs); err != nil {
+			l.log.Warnf("Failed to cache go list result: %v", err)
+		}
+	}
+
+	return pkgs, nil
 }
 
 func (*PackageLoader) parseLoadedPackagesErrors(pkgs []*packages.Package) error {
