@@ -76,11 +76,17 @@ func TryExecuteDaemon(info BuildInfo) (handled bool, exitCode int, err error) {
 		return true, exitcodes.Success, serveDaemon(info, socket)
 	}
 
-	if os.Getenv(envDaemon) != "1" || len(os.Args) < 2 || os.Args[1] != "run" {
+	if os.Getenv(envDaemon) != "1" || !isRunCommand(info, os.Args[1:]) {
 		return false, 0, nil
 	}
 
 	return runViaDaemon()
+}
+
+func isRunCommand(info BuildInfo, args []string) bool {
+	root := newRootCommandWithRunOptions(info, &runCommandOptions{})
+
+	return isWorkerRun(root, args)
 }
 
 // daemonIdentity names the daemon for everything a run reads once per process

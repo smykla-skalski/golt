@@ -108,3 +108,12 @@ func TestEnsureDaemonDir(t *testing.T) {
 	require.NoError(t, os.Symlink(t.TempDir(), link))
 	assert.Error(t, ensureDaemonDir(link))
 }
+
+func TestIsRunCommand(t *testing.T) {
+	assert.True(t, isRunCommand(BuildInfo{}, []string{"run", "./..."}))
+	assert.True(t, isRunCommand(BuildInfo{}, []string{"--color=never", "run", "-v"}))
+	assert.True(t, isRunCommand(BuildInfo{}, []string{"-v", "run"}))
+	assert.False(t, isRunCommand(BuildInfo{}, []string{"fmt"}))
+	assert.False(t, isRunCommand(BuildInfo{}, []string{"--color=never", "linters"}))
+	assert.False(t, isRunCommand(BuildInfo{}, nil))
+}
