@@ -43,10 +43,11 @@ type loadingPackage struct {
 	decUseMutex sync.Mutex
 	scheduler   *schedulerMetrics
 	cachedFacts map[string][]Fact
+	priority    int64
 }
 
 func (lp *loadingPackage) analyzeRecursive(ctx context.Context, cancel context.CancelFunc, loadMode LoadMode,
-	loadSem chan struct{}, actionWorkers *actionWorkerPool,
+	loadSem *prioritySemaphore, actionWorkers *actionWorkerPool,
 ) {
 	lp.analyzeOnce.Do(func() {
 		// Load the direct dependencies, in parallel.
@@ -71,18 +72,16 @@ func (lp *loadingPackage) analyzeRecursive(ctx context.Context, cancel context.C
 }
 
 func (lp *loadingPackage) analyze(ctx context.Context, cancel context.CancelFunc, loadMode LoadMode,
-	loadSem chan struct{}, actionWorkers *actionWorkerPool,
+	loadSem *prioritySemaphore, actionWorkers *actionWorkerPool,
 ) {
-	select {
-	case <-ctx.Done():
+	if !loadSem.acquire(ctx, lp.priority) {
 		return
-	case loadSem <- struct{}{}:
-		lp.scheduler.packageWorkerStarted()
-		defer func() {
-			lp.scheduler.packageWorkerFinished()
-			<-loadSem
-		}()
 	}
+	lp.scheduler.packageWorkerStarted()
+	defer func() {
+		lp.scheduler.packageWorkerFinished()
+		loadSem.release()
+	}()
 
 	// Save memory on unused more fields.
 	defer lp.decUse(loadMode < LoadModeWholeProgram)

@@ -301,7 +301,14 @@ func (r *runner) analyze(pkgs []*packages.Package, analyzers []*analysis.Analyze
 	gomaxprocs := runtime.GOMAXPROCS(-1)
 	debugf("Analyzing at most %d packages in parallel", gomaxprocs)
 
-	loadSem := make(chan struct{}, gomaxprocs)
+	loadSem := newPrioritySemaphore(gomaxprocs)
+	pkgSet := make(map[*loadingPackage]struct{}, len(loadingPackages))
+	for _, lp := range loadingPackages {
+		pkgSet[lp] = struct{}{}
+	}
+	for lp, priority := range packagePriorities(pkgSet) {
+		lp.priority = priority
+	}
 	// Preserve measured execution width while bounding queued action goroutines.
 	actionWorkers := newActionWorkerPool(actionWorkersPerProcessor*gomaxprocs, r.scheduler)
 
