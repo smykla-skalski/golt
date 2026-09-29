@@ -6,6 +6,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"io/fs"
@@ -35,18 +36,48 @@ type sample struct {
 }
 
 func main() {
-	if len(os.Args) != 2 {
-		_, _ = fmt.Fprintln(os.Stderr, "usage: summary <results-root>")
+	flags := flag.NewFlagSet("summary", flag.ExitOnError)
+	maxRegression := flags.Float64("max-wall-regression", 0,
+		"fail when the candidate's median wall time exceeds the baseline's by more than this percentage (0 disables)")
+	_ = flags.Parse(os.Args[1:])
+	if flags.NArg() != 1 {
+		_, _ = fmt.Fprintln(os.Stderr, "usage: summary [-max-wall-regression pct] <results-root>")
 		os.Exit(2)
 	}
-	samples, err := load(os.Args[1])
+
+	samples, err := load(flags.Arg(0))
 	if err == nil {
 		err = write(os.Stdout, samples)
+	}
+	if err == nil && *maxRegression > 0 {
+		err = checkRegression(samples, *maxRegression)
 	}
 	if err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "benchmark summary: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+// checkRegression reports cache modes whose candidate median wall time is more
+// than maxPct percent above the baseline's.
+func checkRegression(samples []sample, maxPct float64) error {
+	wall := metrics[0]
+	var regressions []string
+	for _, mode := range cacheModes(samples) {
+		base := filter(samples, mode, "upstream", "")
+		cand := filter(samples, mode, "fork", "")
+		if len(base) == 0 || len(cand) == 0 {
+			continue
+		}
+		bm, cm := median(base, wall.value), median(cand, wall.value)
+		if bm > 0 && 100*(cm-bm)/bm > maxPct {
+			regressions = append(regressions, fmt.Sprintf("%s: %s", mode, delta(bm, cm)))
+		}
+	}
+	if len(regressions) > 0 {
+		return fmt.Errorf("wall time regressed beyond %.1f%%: %s", maxPct, strings.Join(regressions, ", "))
+	}
+	return nil
 }
 
 // load reads every results.jsonl under dir; the parent directory names the

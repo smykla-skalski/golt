@@ -81,3 +81,33 @@ func TestSummaryWithoutTimingSamples(t *testing.T) {
 		t.Fatal("expected an error without timing samples")
 	}
 }
+
+func TestCheckRegression(t *testing.T) {
+	samples := []sample{
+		{record: timing("fork", "cold", 10.4, 0)}, {record: timing("upstream", "cold", 10, 0)},
+		{record: timing("fork", "warm", 1.2, 0)}, {record: timing("upstream", "warm", 1, 0)},
+	}
+	tests := []struct {
+		desc    string
+		maxPct  float64
+		wantErr string
+	}{
+		{desc: "within threshold", maxPct: 25},
+		{desc: "one mode regressed", maxPct: 10, wantErr: "warm: +20.0%"},
+		{desc: "both modes regressed", maxPct: 3, wantErr: "cold: +4.0%, warm: +20.0%"},
+	}
+	for _, test := range tests {
+		t.Run(test.desc, func(t *testing.T) {
+			err := checkRegression(samples, test.maxPct)
+			if test.wantErr == "" {
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), test.wantErr) {
+				t.Fatalf("error = %v, want it to contain %q", err, test.wantErr)
+			}
+		})
+	}
+}
