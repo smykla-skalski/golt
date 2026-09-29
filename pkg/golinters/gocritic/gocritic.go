@@ -28,6 +28,10 @@ var (
 	isDebug = logutils.HaveDebugTag(logutils.DebugKeyGoCritic)
 )
 
+// initEmbeddedRules registers checkers in go-critic's process-global registry,
+// which rejects a second registration, so it runs once per process.
+var initEmbeddedRules = sync.OnceValue(checkers.InitEmbeddedRules)
+
 func New(settings *config.GoCriticSettings, replacer *strings.Replacer) *goanalysis.Linter {
 	wrapper := &goCriticWrapper{
 		sizes: types.SizesFor("gc", runtime.GOARCH),
@@ -74,7 +78,7 @@ func (w *goCriticWrapper) init() {
 		return
 	}
 
-	err := checkers.InitEmbeddedRules()
+	err := initEmbeddedRules()
 	if err != nil {
 		w.logger.Fatalf("%s: %v: setting an explicit GOROOT can fix this problem", linterName, err)
 	}

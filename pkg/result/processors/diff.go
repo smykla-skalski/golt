@@ -89,6 +89,11 @@ func PrepareDiff(cfg *config.Issues) (*revgrep.Checker, error) {
 	return prepared.checker, prepared.err
 }
 
+// ForgetDiff releases the changes prepared for cfg once a run is done.
+func ForgetDiff(cfg *config.Issues) {
+	preparedDiffs.Delete(cfg)
+}
+
 func prepareDiff(cfg *config.Issues) (*revgrep.Checker, error) {
 	patch := os.Getenv(envGolangciDiffProcessorPatch)
 	if !cfg.Diff && cfg.DiffFromRevision == "" && cfg.DiffFromMergeBase == "" && cfg.DiffPatchFilePath == "" && patch == "" {

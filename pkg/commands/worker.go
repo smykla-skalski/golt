@@ -195,7 +195,6 @@ func executeWorkerRun(info BuildInfo, run workerprotocol.RunPayload) (lifecycle.
 	root := newRootCommandWithRunOptions(info, &runCommandOptions{
 		lifecycleReportPath: os.Getenv(lifecycle.EnvReportPath),
 		lifecycleRecorder:   recorder,
-		exitFn:              processexit.Exit,
 	})
 	if !isWorkerRun(root, run.Args) {
 		return lifecycle.Report{}, exitcodes.Failure, errors.New("worker only accepts the run command")

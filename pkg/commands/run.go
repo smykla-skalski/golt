@@ -42,6 +42,7 @@ import (
 	"github.com/golangci/golangci-lint/v2/pkg/printers"
 	"github.com/golangci/golangci-lint/v2/pkg/report"
 	"github.com/golangci/golangci-lint/v2/pkg/result"
+	"github.com/golangci/golangci-lint/v2/pkg/result/processors"
 	"github.com/golangci/golangci-lint/v2/pkg/timeutils"
 )
 
@@ -399,12 +400,19 @@ func (c *runCommand) runAndPrint(ctx context.Context) error {
 		c.log.Warnf("Failed to discover go env: %s", err)
 	}
 
+	defer processors.ForgetDiff(&c.cfg.Issues)
+
 	if !logutils.HaveDebugTag(logutils.DebugKeyLintersOutput) {
 		// Don't allow linters and loader to print anything
+		savedLog := log.Writer()
 		log.SetOutput(io.Discard)
 		savedStdout, savedStderr := c.setOutputToDevNull()
 		defer func() {
+			if os.Stdout != savedStdout {
+				_ = os.Stdout.Close()
+			}
 			os.Stdout, os.Stderr = savedStdout, savedStderr
+			log.SetOutput(savedLog)
 		}()
 	}
 
