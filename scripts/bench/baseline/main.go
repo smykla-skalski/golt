@@ -1728,9 +1728,13 @@ func (r *runner) runProfiles() error {
 						cacheKey, seed := profileCache(profile.purpose, mode)
 						cacheDir := r.cacheDir(bin, workload, target, scenario, r.opts.ProfileConcurrency, cacheKey)
 						if seed {
+							var seedArgs []string
+							if mode == cacheModeEdit {
+								seedArgs = fullAnalysisArgs
+							}
 							if _, err := r.execute(
 								bin, workload, target, scenario, r.opts.ProfileConcurrency,
-								0, mode, profile.purpose+"-seed", cacheDir, "",
+								0, mode, profile.purpose+"-seed", cacheDir, "", seedArgs...,
 							); err != nil {
 								return err
 							}
@@ -1779,6 +1783,11 @@ func (r *runner) runProfile(
 	return err
 }
 
+// fullAnalysisArgs disable the new-issues modes, so an edit-mode seed analyzes
+// every package and caches all facts, as a full lint before editing would.
+// Without them, a --new-from-rev scenario seeds nothing on a pristine tree.
+var fullAnalysisArgs = []string{"--new=false", "--new-from-rev=", "--new-from-merge-base=", "--new-from-patch="}
+
 // runEditTimings seeds a cache on the pristine workload, then times runs that
 // each follow a fresh edit. The edited file is always restored.
 func (r *runner) runEditTimings(
@@ -1803,7 +1812,9 @@ func (r *runner) runEditTimings(
 	}()
 
 	cacheDir := r.cacheDir(bin, workload, target, scenario, concurrency, cacheModeEdit)
-	if _, err := r.execute(bin, workload, target, scenario, concurrency, 0, cacheModeEdit, "warm-seed", cacheDir, ""); err != nil {
+	if _, err := r.execute(
+		bin, workload, target, scenario, concurrency, 0, cacheModeEdit, "warm-seed", cacheDir, "", fullAnalysisArgs...,
+	); err != nil {
 		return err
 	}
 	for iteration := 1; iteration <= runs; iteration++ {

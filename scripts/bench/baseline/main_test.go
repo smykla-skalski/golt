@@ -685,3 +685,23 @@ func TestWorkloadEditorRestoresOriginal(t *testing.T) {
 		t.Errorf("restored %q with mode %v, want original content and mode %v", got, info.Mode().Perm(), before.Mode().Perm())
 	}
 }
+
+func TestFullAnalysisArgsOverrideScenarioDiffArgs(t *testing.T) {
+	workload := &preparedWorkload{workload: workload{Packages: []string{"./..."}}}
+	scenario := &scenario{Name: "configured-new", Args: []string{"--new-from-rev=HEAD"}}
+
+	args, err := buildRunArgs(workload, scenario, 2, time.Minute, fullAnalysisArgs)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	last := map[string]int{}
+	for i, arg := range args {
+		if strings.HasPrefix(arg, "--new-from-rev=") {
+			last["--new-from-rev="] = i
+		}
+	}
+	if args[last["--new-from-rev="]] != "--new-from-rev=" {
+		t.Fatalf("last --new-from-rev is %q, want it cleared: %v", args[last["--new-from-rev="]], args)
+	}
+}
