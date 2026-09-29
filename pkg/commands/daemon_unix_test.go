@@ -117,3 +117,13 @@ func TestIsRunCommand(t *testing.T) {
 	assert.False(t, isRunCommand(BuildInfo{}, []string{"--color=never", "linters"}))
 	assert.False(t, isRunCommand(BuildInfo{}, nil))
 }
+
+func TestIsDaemonIdentityEnv(t *testing.T) {
+	for _, key := range []string{"GOFLAGS", "GOLANGCI_LINT_CACHE", "GOLT_GC", "GOGC", "CGO_ENABLED", "GL_DEBUG", "LOG_LEVEL", "PATH", "HOME"} {
+		assert.True(t, isDaemonIdentityEnv(key), key)
+	}
+
+	for _, key := range []string{"PWD", "OLDPWD", "SHLVL", "_", "TERM_SESSION_ID", "BENCHMARK_MARKER"} {
+		assert.False(t, isDaemonIdentityEnv(key), key)
+	}
+}

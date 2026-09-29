@@ -52,8 +52,18 @@ const (
 
 var daemonConfigNames = []string{".golangci.yml", ".golangci.yaml", ".golangci.toml", ".golangci.json"}
 
-// daemonVolatileEnv changes between shells without affecting a run.
-var daemonVolatileEnv = []string{"_", "PWD", "OLDPWD", "SHLVL"}
+// daemonIdentityEnv selects the variables read once per process (runtime, go
+// command, caches, debug switches). Each run still gets the client's full
+// environment.
+var (
+	daemonIdentityEnvPrefixes = []string{"GO", "CGO_", "GL_", "LOG_", "XDG_", "PKG_CONFIG"}
+	daemonIdentityEnvKeys     = []string{"PATH", "HOME", "TMPDIR", "CC", "CXX"}
+)
+
+func isDaemonIdentityEnv(key string) bool {
+	return slices.Contains(daemonIdentityEnvKeys, key) ||
+		slices.ContainsFunc(daemonIdentityEnvPrefixes, func(prefix string) bool { return strings.HasPrefix(key, prefix) })
+}
 
 type daemonRequest struct {
 	Fingerprint string
@@ -90,8 +100,8 @@ func isRunCommand(info BuildInfo, args []string) bool {
 }
 
 // daemonIdentity names the daemon for everything a run reads once per process
-// or keeps in process-global state: the binary, directory, arguments, environment
-// and configuration files. Any change starts a separate daemon.
+// or keeps in process-global state: the binary, directory, arguments, relevant
+// environment and configuration files. Any change starts a separate daemon.
 type daemonIdentity struct {
 	exe         string
 	dir         string
@@ -129,7 +139,7 @@ func newDaemonIdentity() (*daemonIdentity, error) {
 	env := slices.DeleteFunc(os.Environ(), func(kv string) bool {
 		key, _, _ := strings.Cut(kv, "=")
 
-		return slices.Contains(daemonVolatileEnv, key)
+		return !isDaemonIdentityEnv(key)
 	})
 	slices.Sort(env)
 	fmt.Fprintf(h, "env %q\n", env)
