@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestHashFileLargerThanCopyBuffer(t *testing.T) {
@@ -48,5 +49,33 @@ func TestCopyFileReusesBuffer(t *testing.T) {
 	})
 	if allocs != 0 {
 		t.Errorf("copyFile allocates %.0f times per call, want 0", allocs)
+	}
+}
+
+func TestFileHashSeesEdits(t *testing.T) {
+	name := filepath.Join(t.TempDir(), "edited.go")
+	if err := os.WriteFile(name, []byte("package p\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	past := time.Now().Add(-time.Hour)
+	if err := os.Chtimes(name, past, past); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := FileHash(name); err != nil {
+		t.Fatal(err)
+	}
+
+	content := []byte("package q\n")
+	if err := os.WriteFile(name, content, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := FileHash(name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := sha256.Sum256(content); got != want {
+		t.Errorf("FileHash after edit = %x, want %x", got, want)
 	}
 }

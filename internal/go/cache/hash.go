@@ -140,22 +140,39 @@ func reverseHash(id [HashSize]byte) string {
 
 var hashFileCache struct {
 	sync.Mutex
-	m map[string][HashSize]byte
+	m map[string]fileHashEntry
+}
+
+// fileHashEntry is revalidated by size and mtime so a long-lived process
+// sees edits.
+type fileHashEntry struct {
+	sum     [HashSize]byte
+	size    int64
+	modTime int64
 }
 
 // FileHash returns the hash of the named file.
-// It caches repeated lookups for a given file,
-// and the cache entry for a file can be initialized
-// using SetFileHash.
+// It caches repeated lookups for a given file while its size and
+// modification time are unchanged.
 // The hash used by FileHash is not the same as
 // the hash used by NewHash.
 func FileHash(file string) ([HashSize]byte, error) {
+	var out [HashSize]byte
+
+	info, err := os.Stat(file)
+	if err != nil {
+		if debugHash {
+			fmt.Fprintf(os.Stderr, "HASH %s: %v\n", file, err)
+		}
+		return out, err
+	}
+
 	hashFileCache.Lock()
-	out, ok := hashFileCache.m[file]
+	entry, ok := hashFileCache.m[file]
 	hashFileCache.Unlock()
 
-	if ok {
-		return out, nil
+	if ok && entry.size == info.Size() && entry.modTime == info.ModTime().UnixNano() {
+		return entry.sum, nil
 	}
 
 	h := sha256.New()
@@ -179,16 +196,13 @@ func FileHash(file string) ([HashSize]byte, error) {
 		fmt.Fprintf(os.Stderr, "HASH %s: %x\n", file, out)
 	}
 
-	SetFileHash(file, out)
+	hashFileCache.Lock()
+	if hashFileCache.m == nil {
+		hashFileCache.m = make(map[string]fileHashEntry)
+	}
+	hashFileCache.m[file] = fileHashEntry{sum: out, size: info.Size(), modTime: info.ModTime().UnixNano()}
+	hashFileCache.Unlock()
+
 	return out, nil
 }
 
-// SetFileHash sets the hash returned by FileHash for file.
-func SetFileHash(file string, sum [HashSize]byte) {
-	hashFileCache.Lock()
-	if hashFileCache.m == nil {
-		hashFileCache.m = make(map[string][HashSize]byte)
-	}
-	hashFileCache.m[file] = sum
-	hashFileCache.Unlock()
-}
