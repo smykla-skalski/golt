@@ -116,7 +116,7 @@ func (c *Cache) pkgActionID(pkg *packages.Package, mode HashMode) (cache.ActionI
 		return cache.ActionID{}, fmt.Errorf("failed to get package hash: %w", err)
 	}
 
-	key, err := cache.NewHash("action ID")
+	key, err := newPackageHash(pkg, "action ID")
 	if err != nil {
 		return cache.ActionID{}, fmt.Errorf("failed to make a hash: %w", err)
 	}
@@ -157,7 +157,7 @@ func (c *Cache) packageHash(pkg *packages.Package, mode HashMode) (string, error
 // The hash is based on all Go files that make up the package,
 // as well as the hashes of imported packages.
 func (c *Cache) computePkgHash(pkg *packages.Package) (hashResults, error) {
-	key, err := cache.NewHash("package hash")
+	key, err := newPackageHash(pkg, "package hash")
 	if err != nil {
 		return nil, fmt.Errorf("failed to make a hash: %w", err)
 	}
@@ -200,7 +200,7 @@ func (c *Cache) computePkgHash(pkg *packages.Package) (hashResults, error) {
 // every file on each run; their directories are stable, and their ignored
 // files cannot affect analysis results.
 func (c *Cache) hashSources(key *cache.Hash, pkg *packages.Package) error {
-	if pkg.BuildID != "" && !isCurrentModule(pkg.Module) {
+	if identifiedByBuildID(pkg) {
 		fmt.Fprintf(key, "buildid %s\n", pkg.BuildID)
 		return nil
 	}
@@ -310,6 +310,29 @@ func (c *Cache) decode(b []byte, data any) error {
 
 func SetSalt(b *bytes.Buffer) {
 	cache.SetSalt(b.Bytes())
+}
+
+// SetSharedSalt sets the salt for packages identified by their build ID. It
+// leaves out project-specific inputs (the main module's go.mod), so entries for
+// the standard library and module dependencies are reused across projects,
+// branches and clones that share a binary and linter settings.
+func SetSharedSalt(b *bytes.Buffer) {
+	cache.SetSharedSalt(b.Bytes())
+}
+
+// identifiedByBuildID reports whether pkg is hashed by the build ID go list
+// computed from all its inputs (sources, flags, language version, dependencies)
+// rather than by its files.
+func identifiedByBuildID(pkg *packages.Package) bool {
+	return pkg.BuildID != "" && !isCurrentModule(pkg.Module)
+}
+
+func newPackageHash(pkg *packages.Package, name string) (*cache.Hash, error) {
+	if identifiedByBuildID(pkg) {
+		return cache.NewSharedHash(name)
+	}
+
+	return cache.NewHash(name)
 }
 
 func DefaultDir() (string, error) {

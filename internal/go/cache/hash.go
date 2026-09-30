@@ -78,13 +78,17 @@ func Subkey(parent ActionID, desc string) (ActionID, error) {
 // NewHash returns a new Hash.
 // The caller is expected to Write data to it and then call Sum.
 func NewHash(name string) (*Hash, error) {
+	return newHash(name, hashSalt)
+}
+
+func newHash(name string, salt []byte) (*Hash, error) {
 	h := &Hash{h: sha256.New(), name: name}
 	if debugHash {
 		fmt.Fprintf(os.Stderr, "HASH[%s]\n", h.name)
 	}
-	n, err := h.Write(hashSalt)
-	if n != len(hashSalt) {
-		return nil, fmt.Errorf("wrote %d/%d bytes of hash salt with error %s", n, len(hashSalt), err)
+	n, err := h.Write(salt)
+	if n != len(salt) {
+		return nil, fmt.Errorf("wrote %d/%d bytes of hash salt with error %s", n, len(salt), err)
 	}
 	if verify {
 		h.buf = new(bytes.Buffer)
