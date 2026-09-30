@@ -404,3 +404,10 @@ func (prog *Program) ImportedPackage(path string) *Package {
 func (prog *Program) SetNoReturn(fn func(*types.Func) bool) {
 	prog.noReturn = fn
 }
+
+// SetBodyFilter makes Build skip the bodies of package-level functions and
+// methods for which skip returns true: they get parameters but no blocks, like
+// functions without syntax. It must be called before Build.
+func (prog *Program) SetBodyFilter(skip func(*Function) bool) {
+	prog.skipBody = skip
+}

@@ -51,6 +51,7 @@ type action struct {
 	cachedFacts         []Fact
 	isInitialPkg        bool
 	needAnalyzeSource   bool
+	factsOnlyIR         bool
 }
 
 // NOTE(ldez) no alteration.
@@ -163,6 +164,11 @@ func (act *action) analyze() {
 	act.runner.passToPkgGuard.Lock()
 	act.runner.passToPkg[pass] = act.Package
 	act.runner.passToPkgGuard.Unlock()
+
+	if act.factsOnlyIR {
+		factsOnlyPasses.Store(pass, struct{}{})
+		defer factsOnlyPasses.Delete(pass)
+	}
 
 	act.Result, act.Err = func() (any, error) {
 		// NOTE(golangci-lint):

@@ -136,12 +136,14 @@ func purity(pass *analysis.Pass) (any, error) {
 			}
 		}()
 
-		if irutil.IsStub(fn) {
-			return false
-		}
-
+		// Checked before the body: dependencies analyzed only for facts may
+		// not have bodies built for functions outside buildir.FactsNeedBody.
 		if _, ok := pureStdlib[fn.Object().(*types.Func).FullName()]; ok {
 			return true
+		}
+
+		if irutil.IsStub(fn) {
+			return false
 		}
 
 		if fn.Signature.Results().Len() == 0 {
