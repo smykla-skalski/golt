@@ -32,6 +32,7 @@ import (
 	"github.com/golangci/golangci-lint/v2/pkg/config"
 	"github.com/golangci/golangci-lint/v2/pkg/exitcodes"
 	"github.com/golangci/golangci-lint/v2/pkg/fsutils"
+	"github.com/golangci/golangci-lint/v2/pkg/goanalysis"
 	"github.com/golangci/golangci-lint/v2/pkg/goanalysis/load"
 	"github.com/golangci/golangci-lint/v2/pkg/goutil"
 	"github.com/golangci/golangci-lint/v2/pkg/lint"
@@ -724,6 +725,7 @@ func initHashSalt(logger logutils.Log, version string, cfg *config.Config) error
 	shared := bytes.NewBuffer(slices.Clone(binSalt))
 	shared.WriteString("golangci-lint-cache/v2")
 	shared.Write(configSalt)
+	shared.WriteString("deps-facts=" + os.Getenv(goanalysis.EnvDepsFacts))
 
 	b := bytes.NewBuffer(slices.Clone(shared.Bytes()))
 	b.WriteString(goModSalt)

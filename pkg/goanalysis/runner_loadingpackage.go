@@ -36,6 +36,10 @@ const unsafePkgName = "unsafe"
 const tooNew = 151
 
 type loadingPackage struct {
+	// signaturesOnly marks dependencies whose function bodies no analyzer
+	// needs (light dependency facts), so type checking skips them.
+	signaturesOnly bool
+
 	pkg         *packages.Package
 	imports     map[string]*loadingPackage
 	isInitial   bool
@@ -383,6 +387,8 @@ func (lp *loadingPackage) loadFromSource(loadMode LoadMode) error {
 		},
 		GoVersion: goVersion,
 		Sizes:     types.SizesFor(build.Default.Compiler, build.Default.GOARCH),
+
+		IgnoreFuncBodies: lp.signaturesOnly && !hasGoFixDirective(pkg.Syntax),
 	}
 
 	_ = types.NewChecker(tc, pkg.Fset, pkg.Types, pkg.TypesInfo).Files(pkg.Syntax)
