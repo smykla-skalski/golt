@@ -16,25 +16,30 @@ func TestGCPolicy(t *testing.T) {
 		want     gcSettings
 		wantOK   bool
 	}{
-		{desc: "disabled by default", total: 16 * gib},
-		{desc: "unknown GOLT_GC value is disabled", env: map[string]string{envGoltGC: "default"}, total: 16 * gib},
+		{desc: "GOLT_GC=default keeps runtime defaults", env: map[string]string{envGoltGC: goltGCDefault}, total: 16 * gib},
 		{
-			desc:   "fast caps at half of memory",
-			env:    map[string]string{envGoltGC: goltGCFast},
+			desc:   "caps at half of memory by default",
+			total:  16 * gib,
+			want:   gcSettings{percent: goltGCPercent, limit: int64(8 * gib)},
+			wantOK: true,
+		},
+		{
+			desc:   "GOLT_GC=fast is accepted",
+			env:    map[string]string{envGoltGC: "fast"},
 			total:  16 * gib,
 			want:   gcSettings{percent: goltGCPercent, limit: int64(8 * gib)},
 			wantOK: true,
 		},
 		{
 			desc:   "user GOMEMLIMIT is kept",
-			env:    map[string]string{envGoltGC: goltGCFast, envGOMEMLIMIT: "2GiB"},
+			env:    map[string]string{envGOMEMLIMIT: "2GiB"},
 			total:  16 * gib,
 			want:   gcSettings{percent: goltGCPercent, limit: -1},
 			wantOK: true,
 		},
-		{desc: "user GOGC disables the policy", env: map[string]string{envGoltGC: goltGCFast, envGOGC: "100"}, total: 16 * gib},
-		{desc: "unknown memory disables the policy", env: map[string]string{envGoltGC: goltGCFast}, totalErr: errors.New("unsupported")},
-		{desc: "zero memory disables the policy", env: map[string]string{envGoltGC: goltGCFast}},
+		{desc: "user GOGC disables the policy", env: map[string]string{envGOGC: "100"}, total: 16 * gib},
+		{desc: "unknown memory disables the policy", env: map[string]string{}, totalErr: errors.New("unsupported")},
+		{desc: "zero memory disables the policy", env: map[string]string{}},
 	}
 
 	for _, test := range tests {

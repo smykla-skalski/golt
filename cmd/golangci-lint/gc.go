@@ -12,7 +12,7 @@ const (
 	envGOGC       = "GOGC"
 	envGOMEMLIMIT = "GOMEMLIMIT"
 	envGoltGC     = "GOLT_GC"
-	goltGCFast    = "fast"
+	goltGCDefault = "default"
 
 	goltGCPercent      = 400
 	goltMemoryFraction = 0.5
@@ -23,16 +23,17 @@ type gcSettings struct {
 	limit   int64
 }
 
-// gcPolicy returns the GC settings golt applies at startup when GOLT_GC=fast,
-// and false when the runtime defaults or the user's own GOGC must be left alone.
+// gcPolicy returns the GC settings golt applies at startup, and false when the
+// runtime defaults (GOLT_GC=default) or the user's own GOGC must be left alone.
 //
 // Analysis allocates heavily, so collection dominates at the default GOGC=100.
-// The fast policy raises the GC percent to trade memory for less collection
-// work, and without an explicit GOMEMLIMIT caps the heap at half of physical
-// memory so the runtime collects aggressively again before the machine runs
-// short. It is opt-in because peak memory grows by roughly 40%.
+// golt raises the GC percent to trade memory for less collection work, and
+// without an explicit GOMEMLIMIT caps the heap at half of physical memory so
+// the runtime collects aggressively again before the machine runs short.
+// Peak memory grows by roughly 40%, which still stays below upstream
+// golangci-lint since facts are no longer copied per package.
 func gcPolicy(getenv func(string) string, totalMemory func() (uint64, error)) (gcSettings, bool) {
-	if getenv(envGoltGC) != goltGCFast || getenv(envGOGC) != "" {
+	if getenv(envGoltGC) == goltGCDefault || getenv(envGOGC) != "" {
 		return gcSettings{}, false
 	}
 
