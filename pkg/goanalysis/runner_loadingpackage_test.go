@@ -10,6 +10,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/tools/go/analysis"
+	"golang.org/x/tools/go/analysis/passes/ctrlflow"
+	"golang.org/x/tools/go/analysis/passes/printf"
 	"golang.org/x/tools/go/packages"
 
 	"github.com/golangci/golangci-lint/v2/internal/cache"
@@ -219,5 +221,32 @@ func TestLoadingPackageFactMissSkipsExportData(t *testing.T) {
 	for key, fact := range hit.packageFacts {
 		assert.Same(t, pkg.Types, key.pkg)
 		assert.Equal(t, "cached", fact.(*loadingPackageTestFact).Value)
+	}
+}
+
+func TestSkipsObjectResolution(t *testing.T) {
+	thirdParty := &analysis.Analyzer{Name: "third", Run: func(*analysis.Pass) (any, error) { return nil, nil }}
+
+	testCases := []struct {
+		desc      string
+		initial   bool
+		analyzers []*analysis.Analyzer
+		want      bool
+	}{
+		{desc: "dependency with x/tools analyzers", analyzers: []*analysis.Analyzer{printf.Analyzer, ctrlflow.Analyzer}, want: true},
+		{desc: "dependency with a third-party analyzer", analyzers: []*analysis.Analyzer{printf.Analyzer, thirdParty}},
+		{desc: "initial package", initial: true, analyzers: []*analysis.Analyzer{printf.Analyzer}},
+		{desc: "no actions"},
+	}
+
+	for _, test := range testCases {
+		t.Run(test.desc, func(t *testing.T) {
+			lp := &loadingPackage{isInitial: test.initial}
+			for _, a := range test.analyzers {
+				lp.actions = append(lp.actions, &action{Analyzer: a})
+			}
+
+			assert.Equal(t, test.want, lp.skipsObjectResolution())
+		})
 	}
 }
