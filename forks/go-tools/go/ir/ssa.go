@@ -62,6 +62,7 @@ type Program struct {
 	objectMethods   map[*types.Func]*Function
 
 	noReturn func(*types.Func) bool // (optional) predicate that decides whether a given call cannot return
+	skipBody func(*Function) bool   // (optional) predicate for functions whose bodies are not built
 }
 
 // A Package is a single analyzed Go package containing Members for

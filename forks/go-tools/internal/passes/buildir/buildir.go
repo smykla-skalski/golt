@@ -11,9 +11,12 @@
 package buildir
 
 import (
+	"go/types"
 	"reflect"
 
+	"honnef.co/go/tools/analysis/driver"
 	"honnef.co/go/tools/go/ir"
+	"honnef.co/go/tools/go/types/typeutil"
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/ctrlflow"
@@ -62,6 +65,12 @@ func run(pass *analysis.Pass) (any, error) {
 
 	prog.SetNoReturn(cfgs.NoReturn)
 
+	if driver.FactsOnly != nil && driver.FactsOnly(pass) {
+		prog.SetBodyFilter(func(fn *ir.Function) bool {
+			return !FactsNeedBody(fn.Signature)
+		})
+	}
+
 	// Create IR packages for direct imports.
 	for _, p := range pass.Pkg.Imports() {
 		prog.CreatePackage(p, nil, nil, true)
@@ -87,4 +96,65 @@ func run(pass *analysis.Pass) (any, error) {
 	}
 
 	return &IR{Pkg: irpkg, SrcFuncs: funcs}, nil
+}
+
+// FactsNeedBody reports whether a go-tools fact analyzer can derive a fact
+// from the body of a function with signature sig:
+//   - nilness: a result that may be pointer-like;
+//   - purity: results, and only basic-typed parameters and receiver (its
+//     stdlib allowlist is checked without the body);
+//   - SA5012: a slice-typed parameter or receiver.
+//
+// Keep in sync with those analyzers; their tests run with bodies filtered.
+func FactsNeedBody(sig *types.Signature) bool {
+	params := sig.Params()
+	recv := sig.Recv()
+
+	isSlice := func(t types.Type) bool { return typeutil.All(t, typeutil.IsSlice) }
+	if recv != nil && isSlice(recv.Type()) {
+		return true
+	}
+	for p := range params.Variables() {
+		if isSlice(p.Type()) {
+			return true
+		}
+	}
+
+	results := sig.Results()
+	if results.Len() == 0 {
+		return false
+	}
+	for r := range results.Variables() {
+		if typeutil.MaybePointerLike(r.Type()) {
+			return true
+		}
+	}
+
+	if recv != nil && !isBasic(recv.Type()) {
+		return false
+	}
+	for p := range params.Variables() {
+		if !isBasic(p.Type()) {
+			return false
+		}
+	}
+
+	return true
+}
+
+// isBasic matches purity's notion of a basic type.
+func isBasic(typ types.Type) bool {
+	switch u := typ.Underlying().(type) {
+	case *types.Basic:
+		return true
+	case *types.Struct:
+		for field := range u.Fields() {
+			if !isBasic(field.Type()) {
+				return false
+			}
+		}
+		return true
+	default:
+		return false
+	}
 }

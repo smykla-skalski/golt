@@ -97,6 +97,8 @@ type analysisStats struct {
 func newRunner(prefix string, logger logutils.Log, pkgCache *cache.Cache, loadGuard *load.Guard,
 	loadMode LoadMode, sw *timeutils.Stopwatch, collectStats bool,
 ) *runner {
+	installFactsOnlyHook()
+
 	r := &runner{
 		prefix:       prefix,
 		log:          logger,
@@ -304,6 +306,10 @@ func (r *runner) analyze(pkgs []*packages.Package, analyzers []*analysis.Analyze
 	}
 	for _, act := range actions {
 		dfs(act.Package)
+	}
+
+	for _, lp := range loadingPackages {
+		lp.markFactsOnlyIR()
 	}
 
 	// Limit memory and IO usage.

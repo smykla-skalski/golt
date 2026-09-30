@@ -3204,6 +3204,12 @@ func (b *builder) buildFunction(fn *Function) {
 	if fn.build != nil {
 		assert(fn.parent == nil, "anonymous functions should not be built by buildFunction()")
 
+		if fn.Prog.skipBody != nil && fn.Prog.skipBody(fn) {
+			b.buildParamsOnly(fn)
+			fn.done()
+			return
+		}
+
 		if fn.Prog.mode&LogSource != 0 {
 			defer logStack("build %s @ %s", fn, fn.Prog.Fset.Position(fn.pos))()
 		}
