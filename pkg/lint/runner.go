@@ -148,6 +148,7 @@ func NewRunner(log logutils.Log, cfg *config.Config, goenv *goutil.Env,
 
 			// Must be after the Fixer.
 			processors.NewUniqByLine(cfg.Issues.UniqByLine),
+			processors.NewStableOrder(),
 			processors.NewMaxPerFileFromLinter(cfg),
 			processors.NewMaxSameIssues(cfg.Issues.MaxSameIssues, log.Child(logutils.DebugKeyMaxSameIssues), cfg),
 			processors.NewMaxFromLinter(cfg.Issues.MaxIssuesPerLinter, log.Child(logutils.DebugKeyMaxFromLinter), cfg),
