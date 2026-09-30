@@ -66,7 +66,7 @@ type runner struct {
 	collectStats   bool
 	scheduler      *schedulerMetrics
 
-	projectFactsOnly bool
+	depsFacts depsFactsMode
 
 	// factOwners maps (analyzer, package) to the action holding the facts that
 	// package produced, so importers look facts up instead of copying them.
@@ -102,15 +102,15 @@ func newRunner(prefix string, logger logutils.Log, pkgCache *cache.Cache, loadGu
 	installFactsOnlyHook()
 
 	r := &runner{
-		projectFactsOnly: projectFactsOnly(),
-		prefix:           prefix,
-		log:              logger,
-		pkgCache:         pkgCache,
-		loadGuard:        loadGuard,
-		loadMode:         loadMode,
-		passToPkg:        map[*analysis.Pass]*packages.Package{},
-		sw:               sw,
-		collectStats:     collectStats,
+		depsFacts:    depsFactsModeFromEnv(),
+		prefix:       prefix,
+		log:          logger,
+		pkgCache:     pkgCache,
+		loadGuard:    loadGuard,
+		loadMode:     loadMode,
+		passToPkg:    map[*analysis.Pass]*packages.Package{},
+		sw:           sw,
+		collectStats: collectStats,
 	}
 	if collectStats {
 		r.scheduler = &schedulerMetrics{}
@@ -215,7 +215,7 @@ func (r *runner) buildActionFactDeps(act *action, a *analysis.Analyzer, pkg *pac
 
 	for _, path := range paths {
 		imp := pkg.Imports[path]
-		if r.projectFactsOnly && !isMainModulePackage(imp) {
+		if !r.depsFacts.computesFactsFor(a, imp) {
 			continue
 		}
 
@@ -302,14 +302,15 @@ func (r *runner) analyze(pkgs []*packages.Package, analyzers []*analysis.Analyze
 		}
 
 		loadingPackages[pkg] = &loadingPackage{
-			pkg:        pkg,
-			imports:    imports,
-			isInitial:  initialPkgs[pkg],
-			log:        r.log,
-			actions:    actionPerPkg[pkg],
-			loadGuard:  r.loadGuard,
-			dependents: 1, // self dependent
-			scheduler:  r.scheduler,
+			signaturesOnly: r.depsFacts == depsFactsLight && !initialPkgs[pkg] && !isMainModulePackage(pkg),
+			pkg:            pkg,
+			imports:        imports,
+			isInitial:      initialPkgs[pkg],
+			log:            r.log,
+			actions:        actionPerPkg[pkg],
+			loadGuard:      r.loadGuard,
+			dependents:     1, // self dependent
+			scheduler:      r.scheduler,
 		}
 	}
 	for _, act := range actions {
