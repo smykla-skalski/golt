@@ -66,6 +66,8 @@ type runner struct {
 	collectStats   bool
 	scheduler      *schedulerMetrics
 
+	projectFactsOnly bool
+
 	// factOwners maps (analyzer, package) to the action holding the facts that
 	// package produced, so importers look facts up instead of copying them.
 	factOwners sync.Map
@@ -98,14 +100,15 @@ func newRunner(prefix string, logger logutils.Log, pkgCache *cache.Cache, loadGu
 	loadMode LoadMode, sw *timeutils.Stopwatch, collectStats bool,
 ) *runner {
 	r := &runner{
-		prefix:       prefix,
-		log:          logger,
-		pkgCache:     pkgCache,
-		loadGuard:    loadGuard,
-		loadMode:     loadMode,
-		passToPkg:    map[*analysis.Pass]*packages.Package{},
-		sw:           sw,
-		collectStats: collectStats,
+		projectFactsOnly: projectFactsOnly(),
+		prefix:           prefix,
+		log:              logger,
+		pkgCache:         pkgCache,
+		loadGuard:        loadGuard,
+		loadMode:         loadMode,
+		passToPkg:        map[*analysis.Pass]*packages.Package{},
+		sw:               sw,
+		collectStats:     collectStats,
 	}
 	if collectStats {
 		r.scheduler = &schedulerMetrics{}
@@ -209,7 +212,12 @@ func (r *runner) buildActionFactDeps(act *action, a *analysis.Analyzer, pkg *pac
 	paths := slices.Sorted(maps.Keys(pkg.Imports)) // for determinism
 
 	for _, path := range paths {
-		dep := r.makeAction(a, pkg.Imports[path], initialPkgs, actions, actAlloc)
+		imp := pkg.Imports[path]
+		if r.projectFactsOnly && !isMainModulePackage(imp) {
+			continue
+		}
+
+		dep := r.makeAction(a, imp, initialPkgs, actions, actAlloc)
 		act.Deps = append(act.Deps, dep)
 	}
 
