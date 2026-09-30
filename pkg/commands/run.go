@@ -32,6 +32,7 @@ import (
 	"github.com/golangci/golangci-lint/v2/pkg/config"
 	"github.com/golangci/golangci-lint/v2/pkg/exitcodes"
 	"github.com/golangci/golangci-lint/v2/pkg/fsutils"
+	"github.com/golangci/golangci-lint/v2/pkg/goanalysis"
 	"github.com/golangci/golangci-lint/v2/pkg/goanalysis/load"
 	"github.com/golangci/golangci-lint/v2/pkg/goutil"
 	"github.com/golangci/golangci-lint/v2/pkg/lint"
@@ -343,6 +344,8 @@ func (c *runCommand) startTracing() error {
 		if err != nil {
 			return fmt.Errorf("can't create file %s: %w", c.opts.CPUProfilePath, err)
 		}
+		goanalysis.EnableProfileLabels()
+
 		if err := pprof.StartCPUProfile(f); err != nil {
 			return fmt.Errorf("can't start CPU profiling: %w", err)
 		}

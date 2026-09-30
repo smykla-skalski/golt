@@ -43,7 +43,9 @@ func (act *action) analyzeSafe() {
 		}
 	}()
 
-	act.runner.sw.TrackStage(act.Analyzer.Name, act.analyze)
+	withProfileLabels(packageKind(act.isInitialPkg), "analyze", act.Analyzer.Name, func() {
+		act.runner.sw.TrackStage(act.Analyzer.Name, act.analyze)
+	})
 }
 
 func (act *action) markDepsForAnalyzingSource() {

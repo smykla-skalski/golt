@@ -90,7 +90,12 @@ func (lp *loadingPackage) analyze(ctx context.Context, cancel context.CancelFunc
 	// Save memory on unused more fields.
 	defer lp.decUse(loadMode < LoadModeWholeProgram)
 
-	if err := lp.loadWithFacts(loadMode); err != nil {
+	var loadErr error
+	withProfileLabels(packageKind(lp.isInitial), "load", "", func() {
+		loadErr = lp.loadWithFacts(loadMode)
+	})
+
+	if err := loadErr; err != nil {
 		// Note: this error is ignored when there is no facts loading (e.g. with 98% of linters).
 		// But this is not a problem because the errors are added to the package.Errors.
 		// You through an error, try to add it to actions, but there is no action annnddd it's gone!
