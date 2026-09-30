@@ -376,6 +376,14 @@ func findPrintLike(pass *analysis.Pass, res *Result) {
 func methodImplementations(pass *analysis.Pass) map[*types.Func]map[*types.Func]bool {
 	impls := make(map[*types.Func]map[*types.Func]bool)
 
+	// Only print-like methods of this package's interfaces matter below,
+	// and finding all interface conversions is costly, so skip it for
+	// packages that declare no variadic interface method (a generic
+	// method becomes print-like only when instantiated, hence variadic).
+	if !declaresVariadicInterfaceMethod(pass) {
+		return impls
+	}
+
 	// To find interface/implementation relations,
 	// we use the 'satisfy' pass, but proposal #70638
 	// provides a better way.
@@ -408,6 +416,24 @@ func methodImplementations(pass *analysis.Pass) map[*types.Func]map[*types.Func]
 		}
 	}
 	return impls
+}
+
+// declaresVariadicInterfaceMethod reports whether an interface type in the
+// package declares a variadic method.
+func declaresVariadicInterfaceMethod(pass *analysis.Pass) bool {
+	inspect := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
+	for cur := range inspect.Root().Preorder((*ast.InterfaceType)(nil)) {
+		iface, ok := pass.TypesInfo.TypeOf(cur.Node().(*ast.InterfaceType)).(*types.Interface)
+		if !ok {
+			continue
+		}
+		for m := range iface.ExplicitMethods() {
+			if m.Signature().Variadic() {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func match(info *types.Info, arg ast.Expr, param *types.Var) bool {
