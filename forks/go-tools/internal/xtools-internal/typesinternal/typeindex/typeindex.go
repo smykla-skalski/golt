@@ -13,6 +13,7 @@ import (
 	"go/ast"
 	"go/types"
 	"iter"
+	"sync"
 
 	"golang.org/x/tools/go/ast/edge"
 	"golang.org/x/tools/go/ast/inspector"
@@ -21,18 +22,26 @@ import (
 	"honnef.co/go/tools/internal/xtools-internal/typesinternal"
 )
 
-// New constructs an Index for the package of type-annotated syntax
+// New constructs an Index for the package of type-annotated syntax.
+// The index is built on first use: analyzers that require it often
+// query it only when rare constructs are present.
 //
 // TODO(adonovan): accept a FileSet too?
 // We regret not requiring one in inspector.New.
 func New(inspect *inspector.Inspector, pkg *types.Package, info *types.Info) *Index {
-	ix := &Index{
-		inspect:  inspect,
-		info:     info,
-		packages: make(map[string]*types.Package),
-		def:      make(map[types.Object]inspector.Cursor),
-		uses:     make(map[types.Object]*uses),
-	}
+	return &Index{inspect: inspect, pkg: pkg, info: info}
+}
+
+func (ix *Index) build() {
+	ix.once.Do(ix.index)
+}
+
+func (ix *Index) index() {
+	inspect, pkg, info := ix.inspect, ix.pkg, ix.info
+
+	ix.packages = make(map[string]*types.Package)
+	ix.def = make(map[types.Object]inspector.Cursor)
+	ix.uses = make(map[types.Object]*uses)
 
 	addPackage := func(pkg2 *types.Package) {
 		if pkg2 != nil && pkg2 != pkg {
@@ -84,7 +93,6 @@ func New(inspect *inspector.Inspector, pkg *types.Package, info *types.Info) *In
 			}
 		}
 	}
-	return ix
 }
 
 // objectOrigin returns the generic object for obj if it is a field or
@@ -116,7 +124,9 @@ func objectOrigin(obj types.Object) (types.Object, bool) {
 // An Index holds an index mapping [types.Object] symbols to their syntax.
 // In effect, it is the inverse of [types.Info].
 type Index struct {
+	once     sync.Once
 	inspect  *inspector.Inspector
+	pkg      *types.Package
 	info     *types.Info
 	packages map[string]*types.Package         // packages of all symbols referenced from this package
 	def      map[types.Object]inspector.Cursor // Cursor of *ast.Ident that defines the Object
@@ -147,6 +157,7 @@ type uses struct {
 // entries mapping fields and methods of generic types to references
 // through their corresponding instantiated objects.
 func (ix *Index) Uses(obj types.Object) iter.Seq[inspector.Cursor] {
+	ix.build()
 	return func(yield func(inspector.Cursor) bool) {
 		if uses := ix.uses[obj]; uses != nil {
 			var last int32
@@ -169,6 +180,7 @@ func (ix *Index) Uses(obj types.Object) iter.Seq[inspector.Cursor] {
 // result of [Index.Object] so that analyzers can conveniently skip
 // packages that don't use a symbol of interest.)
 func (ix *Index) Used(objs ...types.Object) bool {
+	ix.build()
 	for _, obj := range objs {
 		if obj != nil && ix.uses[obj] != nil {
 			return true
@@ -180,6 +192,7 @@ func (ix *Index) Used(objs ...types.Object) bool {
 // Def returns the Cursor of the [*ast.Ident] in this package
 // that declares the specified object, if any.
 func (ix *Index) Def(obj types.Object) (inspector.Cursor, bool) {
+	ix.build()
 	cur, ok := ix.def[obj]
 	return cur, ok
 }
@@ -187,6 +200,7 @@ func (ix *Index) Def(obj types.Object) (inspector.Cursor, bool) {
 // Package returns the package of the specified path,
 // or nil if it is not referenced from this package.
 func (ix *Index) Package(path string) *types.Package {
+	ix.build()
 	return ix.packages[path]
 }
 
