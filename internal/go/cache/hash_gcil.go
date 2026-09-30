@@ -10,6 +10,25 @@ func SetSalt(b []byte) {
 	hashSalt = b
 }
 
+// sharedSalt salts hashes of packages identified by their build ID, which
+// already covers everything else that makes their analysis differ.
+var sharedSalt []byte
+
+// SetSharedSalt sets the salt for NewSharedHash.
+func SetSharedSalt(b []byte) {
+	sharedSalt = b
+}
+
+// NewSharedHash is NewHash salted with the shared salt, or with the regular
+// salt when no shared salt is set.
+func NewSharedHash(name string) (*Hash, error) {
+	if sharedSalt == nil {
+		return NewHash(name)
+	}
+
+	return newHash(name, sharedSalt)
+}
+
 var copyBufPool = sync.Pool{
 	New: func() any {
 		b := make([]byte, 32*1024)

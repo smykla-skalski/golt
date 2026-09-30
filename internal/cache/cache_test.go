@@ -1,6 +1,7 @@
 package cache
 
 import (
+	"bytes"
 	"fmt"
 	"testing"
 
@@ -207,4 +208,44 @@ func TestCache_computeHash_buildID(t *testing.T) {
 			assert.NotEqual(t, results[HashModeNeedOnlySelf], otherResults[HashModeNeedOnlySelf])
 		})
 	}
+}
+
+func TestCache_pkgActionID_sharedSalt(t *testing.T) {
+	dependency := &packages.Module{Path: "example.com/dep", Version: "v1.0.0", Dir: "/modcache/example.com/dep@v1.0.0"}
+	workspace := &packages.Module{Path: "example.com/main", Dir: "./testdata", Main: true}
+
+	dep := &packages.Package{PkgPath: "example.com/dep", Module: dependency, BuildID: "a/b"}
+	root := &packages.Package{
+		PkgPath:         "example.com/main",
+		Module:          workspace,
+		CompiledGoFiles: []string{"./testdata/hello.go"},
+		Imports:         map[string]*packages.Package{"example.com/dep": dep},
+	}
+
+	actionIDs := func(projectSalt string) (depID, rootID [32]byte) {
+		t.Helper()
+
+		SetSharedSalt(bytes.NewBufferString("shared"))
+		SetSalt(bytes.NewBufferString("shared" + projectSalt))
+		t.Cleanup(func() {
+			SetSalt(bytes.NewBuffer(nil))
+			SetSharedSalt(bytes.NewBuffer(nil))
+		})
+
+		pkgCache := setupCache(t)
+
+		depID, err := pkgCache.pkgActionID(dep, HashModeNeedAllDeps)
+		require.NoError(t, err)
+
+		rootID, err = pkgCache.pkgActionID(root, HashModeNeedAllDeps)
+		require.NoError(t, err)
+
+		return depID, rootID
+	}
+
+	depA, rootA := actionIDs("go.mod A")
+	depB, rootB := actionIDs("go.mod B")
+
+	assert.Equal(t, depA, depB, "dependency keys ignore the project salt")
+	assert.NotEqual(t, rootA, rootB, "workspace keys include the project salt")
 }

@@ -721,12 +721,15 @@ func initHashSalt(logger logutils.Log, version string, cfg *config.Config) error
 		logger.Warnf("Failed to calculate go.mod salt: %v", err)
 	}
 
-	b := bytes.NewBuffer(binSalt)
-	b.WriteString("golangci-lint-cache/v2")
-	b.Write(configSalt)
+	shared := bytes.NewBuffer(slices.Clone(binSalt))
+	shared.WriteString("golangci-lint-cache/v2")
+	shared.Write(configSalt)
+
+	b := bytes.NewBuffer(slices.Clone(shared.Bytes()))
 	b.WriteString(goModSalt)
 
 	cache.SetSalt(b)
+	cache.SetSharedSalt(shared)
 
 	return nil
 }
