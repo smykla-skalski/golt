@@ -9,6 +9,7 @@ import (
 	"encoding/gob"
 	"fmt"
 	"go/token"
+	"go/types"
 	"maps"
 	"runtime"
 	"slices"
@@ -36,7 +37,6 @@ var (
 
 	factsDebugf        = logutils.Debug(logutils.DebugKeyGoAnalysisFacts)
 	factsCacheDebugf   = logutils.Debug(logutils.DebugKeyGoAnalysisFactsCache)
-	factsInheritDebugf = logutils.Debug(logutils.DebugKeyGoAnalysisFactsInherit)
 	factsExportDebugf  = logutils.Debug(logutils.DebugKeyGoAnalysisFacts)
 	isFactsExportDebug = logutils.HaveDebugTag(logutils.DebugKeyGoAnalysisFactsExport)
 )
@@ -65,6 +65,15 @@ type runner struct {
 	sw             *timeutils.Stopwatch
 	collectStats   bool
 	scheduler      *schedulerMetrics
+
+	// factOwners maps (analyzer, package) to the action holding the facts that
+	// package produced, so importers look facts up instead of copying them.
+	factOwners sync.Map
+}
+
+type factOwnerKey struct {
+	analyzer *analysis.Analyzer
+	pkg      *types.Package
 }
 
 type analyzerStats struct {

@@ -15,9 +15,32 @@ type IsDeprecated struct{ Msg string }
 func (*IsDeprecated) AFact()           {}
 func (d *IsDeprecated) String() string { return "Deprecated: " + d.Msg }
 
+// Result looks deprecation facts up on demand rather than copying every
+// visible fact for each package, which grows quadratically with the import
+// graph.
 type Result struct {
-	Objects  map[types.Object]*IsDeprecated
-	Packages map[*types.Package]*IsDeprecated
+	importObjectFact  func(types.Object, analysis.Fact) bool
+	importPackageFact func(*types.Package, analysis.Fact) bool
+}
+
+// Object returns the deprecation of obj, or nil.
+func (r Result) Object(obj types.Object) *IsDeprecated {
+	fact := new(IsDeprecated)
+	if obj == nil || !r.importObjectFact(obj, fact) {
+		return nil
+	}
+
+	return fact
+}
+
+// Package returns the deprecation of pkg, or nil.
+func (r Result) Package(pkg *types.Package) *IsDeprecated {
+	fact := new(IsDeprecated)
+	if pkg == nil || !r.importPackageFact(pkg, fact) {
+		return nil
+	}
+
+	return fact
 }
 
 var Analyzer = &analysis.Analyzer{
@@ -139,15 +162,8 @@ func deprecated(pass *analysis.Pass) (any, error) {
 	}
 
 	out := Result{
-		Objects:  map[types.Object]*IsDeprecated{},
-		Packages: map[*types.Package]*IsDeprecated{},
-	}
-
-	for _, fact := range pass.AllObjectFacts() {
-		out.Objects[fact.Object] = fact.Fact.(*IsDeprecated)
-	}
-	for _, fact := range pass.AllPackageFacts() {
-		out.Packages[fact.Package] = fact.Fact.(*IsDeprecated)
+		importObjectFact:  pass.ImportObjectFact,
+		importPackageFact: pass.ImportPackageFact,
 	}
 
 	return out, nil

@@ -87,7 +87,7 @@ func run(pass *analysis.Pass) (any, error) {
 		}
 
 		if tfn != nil {
-			if _, ok := deprs.Objects[tfn]; ok {
+			if deprs.Object(tfn) != nil {
 				// functions that are deprecated may use deprecated
 				// symbols
 				return
@@ -152,7 +152,7 @@ func run(pass *analysis.Pass) (any, error) {
 		if pass.TypesInfo.Types[sel.X].IsType() {
 			node = sel.Sel
 		}
-		if depr, ok := deprs.Objects[obj]; ok {
+		if depr := deprs.Object(obj); depr != nil {
 			handleDeprecation(depr, node, code.SelectorName(pass, sel), obj.Pkg().Path(), tfn)
 		}
 		return true
@@ -216,7 +216,7 @@ func run(pass *analysis.Pass) (any, error) {
 
 		p := spec.Path.Value
 		path := p[1 : len(p)-1]
-		if depr, ok := deprs.Packages[imp]; ok {
+		if depr := deprs.Package(imp); depr != nil {
 			if path == "github.com/golang/protobuf/proto" {
 				gen, ok := code.Generator(pass, spec.Path.Pos())
 				if ok && gen == generated.ProtocGenGo {

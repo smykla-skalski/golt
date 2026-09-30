@@ -61,22 +61,9 @@ func (act *action) applyCachedFacts() {
 	act.cachedFacts = nil
 	act.cachedFactsApplied = true
 
-	// The cache only stores facts a package produces about its own objects.
-	// Rebuild re-exported facts from dependencies after package types are loaded.
-	act.inheritFactsFromDeps()
-}
-
-// inheritFactsFromDeps rebuilds, in memory,
-// the facts re-exported from this action's dependencies (vertical edges: same analyzer, different package),
-// mirroring the inheritance performed by analyze() for packages analyzed from source.
-func (act *action) inheritFactsFromDeps() {
-	for _, dep := range act.Deps {
-		if dep.Package == act.Package || dep.Analyzer != act.Analyzer {
-			continue
-		}
-
-		inheritFacts(act, dep)
-	}
+	// The cache only stores facts a package produces about its own objects;
+	// importers read the facts of dependencies through their owners.
+	act.registerFactOwner()
 }
 
 func (act *action) persistedFacts() []Fact {
@@ -88,10 +75,8 @@ func (act *action) persistedFacts() []Fact {
 
 	// Persist only the facts this package produces about its own objects.
 	//
-	// Facts about objects from other packages (inherited through this package's export data) are intentionally NOT persisted:
-	// doing so duplicates them in every cache entry along the import graph and makes the cache grow quadratically.
-	// When a package is restored from the cache,
-	// those re-exported facts are rebuilt in memory by inheriting from its dependencies (see inheritFactsFromDeps).
+	// Facts about objects from other packages are held by their own packages' actions and are not persisted here:
+	// doing so would duplicate them in every cache entry along the import graph and make the cache grow quadratically.
 
 	var facts []Fact
 

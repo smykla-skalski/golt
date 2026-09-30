@@ -71,7 +71,7 @@ fnLoop:
 					// TODO(dh): support anonymous functions
 					continue
 				}
-				if _, ok := pure[callee.Object().(*types.Func)]; ok {
+				if pure(callee.Object().(*types.Func)) {
 					if pass.Pkg.Path() == "fmt_test" && callee.Object().(*types.Func).FullName() == "fmt.Sprintf" {
 						// special case for benchmarks in the fmt package
 						continue

@@ -361,7 +361,7 @@ func MayHaveSideEffects(pass *analysis.Pass, expr ast.Expr, purity purity.Result
 		}
 		switch obj := typeutil.Callee(pass.TypesInfo, expr).(type) {
 		case *types.Func:
-			if _, ok := purity[obj]; !ok {
+			if !purity(obj) {
 				return true
 			}
 		case *types.Builtin:
