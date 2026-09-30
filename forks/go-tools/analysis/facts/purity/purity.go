@@ -19,7 +19,10 @@ type IsPure struct{}
 func (*IsPure) AFact()           {}
 func (d *IsPure) String() string { return "is pure" }
 
-type Result map[*types.Func]*IsPure
+// Result reports whether a function is known to be pure. Facts are looked up
+// on demand: materializing every visible fact for each package grows
+// quadratically with the import graph.
+type Result func(fn *types.Func) bool
 
 var Analyzer = &analysis.Analyzer{
 	Name:       "fact_purity",
@@ -256,9 +259,7 @@ func purity(pass *analysis.Pass) (any, error) {
 		check(fn)
 	}
 
-	out := Result{}
-	for _, fact := range pass.AllObjectFacts() {
-		out[fact.Object.(*types.Func)] = fact.Fact.(*IsPure)
-	}
-	return out, nil
+	return Result(func(fn *types.Func) bool {
+		return fn != nil && pass.ImportObjectFact(fn, new(IsPure))
+	}), nil
 }

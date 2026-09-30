@@ -14,6 +14,7 @@ import (
 	"go/types"
 	"os"
 	"reflect"
+	"slices"
 	"time"
 
 	"golang.org/x/tools/go/analysis"
@@ -110,13 +111,12 @@ func (act *action) analyze() {
 			// become inputs to this analysis pass.
 			inputs[dep.Analyzer] = dep.Result
 
-		} else if dep.Analyzer == act.Analyzer { // (always true)
-			// Same analysis, different package (vertical edge):
-			// serialized facts produced by prerequisite analysis
-			// become available to this analysis pass.
-			inheritFacts(act, dep)
 		}
+		// Same analysis, different package (vertical edge): the facts that
+		// dependency produced are looked up through factOwner on demand.
 	}
+
+	act.registerFactOwner()
 
 	// NOTE(ldez) this is not compatible with our implementation.
 	// Quick (nonexhaustive) check that the correct go/packages mode bits were used.
@@ -210,68 +210,78 @@ func (act *action) analyze() {
 
 }
 
-// NOTE(ldez) altered: logger; sanityCheck.
-// inheritFacts populates act.facts with
-// those it obtains from its dependency, dep.
-func inheritFacts(act, dep *action) {
-	const sanityCheck = false
-
-	for key, fact := range dep.objectFacts {
-		// Filter out facts related to objects
-		// that are irrelevant downstream
-		// (equivalently: not in the compiler export data).
-		if !exportedFrom(key.obj, dep.Package.Types) {
-			factsInheritDebugf("%v: discarding %T fact from %s for %s: %s", act, fact, dep, key.obj, fact)
-			continue
-		}
-
-		// Optionally serialize/deserialize fact
-		// to verify that it works across address spaces.
-		if sanityCheck {
-			encodedFact, err := codeFact(fact)
-			if err != nil {
-				act.runner.log.Panicf("internal error: encoding of %T fact failed in %v: %v", fact, act, err)
-			}
-			fact = encodedFact
-		}
-
-		factsInheritDebugf("%v: inherited %T fact for %s: %s", act, fact, key.obj, fact)
-
-		act.objectFacts[key] = fact
+// registerFactOwner makes the facts this action produces visible to the
+// actions of importing packages.
+func (act *action) registerFactOwner() {
+	if act.runner == nil || len(act.Analyzer.FactTypes) == 0 || act.Package == nil || act.Package.Types == nil {
+		return
 	}
 
-	for key, fact := range dep.packageFacts {
-		// TODO: filter out facts that belong to
-		// packages not mentioned in the export data
-		// to prevent side channels.
-		//
-		// The Pass.All{Object,Package}Facts accessors expose too much:
-		// all facts, of all types, for all dependencies in the action
-		// graph. Not only does the representation grow quadratically,
-		// but it violates the separate compilation paradigm, allowing
-		// analysis implementations to communicate with indirect
-		// dependencies that are not mentioned in the export data.
-		//
-		// It's not clear how to fix this short of a rather expensive
-		// filtering step after each action that enumerates all the
-		// objects that would appear in export data, and deletes
-		// facts associated with objects not in this set.
+	act.runner.factOwners.Store(factOwnerKey{act.Analyzer, act.Package.Types}, act)
+}
 
-		// Optionally serialize/deserialize fact
-		// to verify that it works across address spaces
-		// and is deterministic.
-		if sanityCheck {
-			encodedFact, err := codeFact(fact)
-			if err != nil {
-				act.runner.log.Panicf("internal error: encoding of %T fact failed in %v", fact, act)
-			}
-			fact = encodedFact
-		}
-
-		factsInheritDebugf("%v: inherited %T fact for %s: %s", act, fact, key.pkg.Path(), fact)
-
-		act.packageFacts[key] = fact
+func (act *action) unregisterFactOwner(pkg *types.Package) {
+	if act.runner == nil || len(act.Analyzer.FactTypes) == 0 || pkg == nil {
+		return
 	}
+
+	act.runner.factOwners.CompareAndDelete(factOwnerKey{act.Analyzer, pkg}, act)
+}
+
+// factOwner returns the action of the same analyzer that holds the facts
+// produced by pkg, or nil.
+func (act *action) factOwner(pkg *types.Package) *action {
+	if act.runner == nil || pkg == nil || act.Package == nil || pkg == act.Package.Types {
+		return nil
+	}
+
+	owner, ok := act.runner.factOwners.Load(factOwnerKey{act.Analyzer, pkg})
+	if !ok {
+		return nil
+	}
+
+	return owner.(*action)
+}
+
+// seesObjectFact reports whether a fact about obj, produced by the dependency
+// owner, is visible to act. It matches copying facts along import edges
+// filtered by exportedFrom: objects it accepts for any package (types,
+// constants, methods, fields) pass through every import, the others only
+// through a direct import of their own package.
+func (act *action) seesObjectFact(obj types.Object, owner *action) bool {
+	if exportedFrom(obj, nil) {
+		return true
+	}
+
+	return exportedFrom(obj, obj.Pkg()) && act.importsDirectly(owner)
+}
+
+func (act *action) importsDirectly(owner *action) bool {
+	return slices.Contains(act.Deps, owner)
+}
+
+// visibleFactOwners returns the actions of all dependencies reachable through
+// import edges of the same analyzer.
+func (act *action) visibleFactOwners() []*action {
+	seen := map[*action]bool{act: true}
+
+	var owners []*action
+
+	var visit func(a *action)
+	visit = func(a *action) {
+		for _, dep := range a.Deps {
+			if dep.Analyzer != act.Analyzer || dep.Package == a.Package || seen[dep] {
+				continue
+			}
+
+			seen[dep] = true
+			owners = append(owners, dep)
+			visit(dep)
+		}
+	}
+	visit(act)
+
+	return owners
 }
 
 // NOTE(ldez) altered: `new` is renamed to `newFact`.
@@ -343,7 +353,13 @@ func (act *action) ObjectFact(obj types.Object, ptr analysis.Fact) bool {
 		panic("nil object")
 	}
 	key := objectFactKey{obj, act.factType(ptr)}
-	if v, ok := act.objectFacts[key]; ok {
+	v, ok := act.objectFacts[key]
+	if !ok {
+		if owner := act.factOwner(obj.Pkg()); owner != nil && act.seesObjectFact(obj, owner) {
+			v, ok = owner.objectFacts[key]
+		}
+	}
+	if ok {
 		reflect.ValueOf(ptr).Elem().Set(reflect.ValueOf(v).Elem())
 		return true
 	}
@@ -382,6 +398,13 @@ func (act *action) AllObjectFacts() []analysis.ObjectFact {
 	for k, fact := range act.objectFacts {
 		facts = append(facts, analysis.ObjectFact{Object: k.obj, Fact: fact})
 	}
+	for _, owner := range act.visibleFactOwners() {
+		for k, fact := range owner.objectFacts {
+			if act.seesObjectFact(k.obj, owner) {
+				facts = append(facts, analysis.ObjectFact{Object: k.obj, Fact: fact})
+			}
+		}
+	}
 	return facts
 }
 
@@ -395,7 +418,13 @@ func (act *action) PackageFact(pkg *types.Package, ptr analysis.Fact) bool {
 		panic("nil package")
 	}
 	key := packageFactKey{pkg, act.factType(ptr)}
-	if v, ok := act.packageFacts[key]; ok {
+	v, ok := act.packageFacts[key]
+	if !ok {
+		if owner := act.factOwner(pkg); owner != nil {
+			v, ok = owner.packageFacts[key]
+		}
+	}
+	if ok {
 		reflect.ValueOf(ptr).Elem().Set(reflect.ValueOf(v).Elem())
 		return true
 	}
@@ -434,6 +463,11 @@ func (act *action) AllPackageFacts() []analysis.PackageFact {
 	facts := make([]analysis.PackageFact, 0, len(act.packageFacts))
 	for k, fact := range act.packageFacts {
 		facts = append(facts, analysis.PackageFact{Package: k.pkg, Fact: fact})
+	}
+	for _, owner := range act.visibleFactOwners() {
+		for k, fact := range owner.packageFacts {
+			facts = append(facts, analysis.PackageFact{Package: k.pkg, Fact: fact})
+		}
 	}
 	return facts
 }

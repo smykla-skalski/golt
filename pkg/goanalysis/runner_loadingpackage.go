@@ -517,6 +517,12 @@ func (lp *loadingPackage) decUse(canClearTypes bool) {
 		return
 	}
 
+	if lp.pkg != nil {
+		for _, act := range lp.actions {
+			act.unregisterFactOwner(lp.pkg.Types)
+		}
+	}
+
 	if canClearTypes {
 		// canClearTypes is set to true if we can discard type
 		// information after the package and its dependents have been

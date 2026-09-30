@@ -51,8 +51,10 @@ type ValueNilness struct {
 	Outer Nilness
 }
 
+// Result looks nilness facts up on demand rather than copying every visible
+// fact for each package, which grows quadratically with the import graph.
 type Result struct {
-	m map[*types.Func][]ValueNilness
+	importFact func(types.Object, analysis.Fact) bool
 }
 
 var Analysis = &analysis.Analyzer{
@@ -70,11 +72,12 @@ func (r *Result) Nilness(fn *types.Func, ret int) ValueNilness {
 	if !typeutil.MaybePointerLike(typ) {
 		return ValueNilness{Outer: NeverNil}
 	}
-	if len(r.m[fn]) == 0 {
+	fact := new(nilnessFact)
+	if !r.importFact(fn, fact) || len(fact.Rets) == 0 {
 		return ValueNilness{Inner: MaybeNil, Outer: MaybeNil}
 	}
 
-	return normalize(r.m[fn][ret], typ)
+	return normalize(fact.Rets[ret], typ)
 }
 
 func normalize(v ValueNilness, typ types.Type) ValueNilness {
@@ -89,9 +92,6 @@ func normalize(v ValueNilness, typ types.Type) ValueNilness {
 
 func run(pass *analysis.Pass) (any, error) {
 	seen := map[*ir.Function]struct{}{}
-	out := &Result{
-		m: map[*types.Func][]ValueNilness{},
-	}
 
 	// TODO(dh): instead of recursion and giving up on mutual recursion, we
 	// should compute the DFA over the call graph, at least until we have
@@ -100,11 +100,7 @@ func run(pass *analysis.Pass) (any, error) {
 		impl(pass, fn, seen)
 	}
 
-	for _, fact := range pass.AllObjectFacts() {
-		out.m[fact.Object.(*types.Func)] = fact.Fact.(*nilnessFact).Rets
-	}
-
-	return out, nil
+	return &Result{importFact: pass.ImportObjectFact}, nil
 }
 
 type Nilness uint8
