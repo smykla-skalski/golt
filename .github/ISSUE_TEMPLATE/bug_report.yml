@@ -1,142 +1,65 @@
-name: 🐞 Bug Report
-description: "Create a report to help us improve."
-labels: [bug]
+name: Bug Report
+description: Report a bug or unexpected behavior
+labels: [kind/bug]
 body:
-  - type: checkboxes
-    id: terms
+  - type: markdown
     attributes:
-      label: Welcome
-      options:
-        - label: Yes, I'm using a binary release within 2 latest [releases](https://github.com/golangci/golangci-lint/releases). Only such installations are supported.
-          required: true
-        - label: Yes, I've searched similar [issues on GitHub](https://github.com/golangci/golangci-lint/issues) and didn't find any.
-          required: true
-        - label: Yes, I've read the `typecheck` section of the [FAQ](https://golangci-lint.run/docs/welcome/faq/#why-do-you-have-typecheck-errors).
-          required: true
-        - label: Yes, I've tried with the standalone [linter](https://golangci-lint.run/docs/linters/) if available (e.g., gocritic, go vet, etc.).
-          required: true
-        - label: I agree to follow this project's [Code of Conduct](https://github.com/golangci/golangci-lint?tab=coc-ov-file)
-          required: true
+      value: |
+        Thank you for reporting a bug! Please fill out the information below to help us fix the issue.
 
-  - type: dropdown
-    id: install
+  - type: textarea
+    id: description
     attributes:
-      label: How did you install golangci-lint?
-      multiple: true
-      options:
-        - Official binary
-        - Official GitHub Action
-        - Brew
-        - MacPorts
-        - Chocolatey
-        - Scoop
-        - Docker
-        - go install
-        - Tools pattern
-        - go tool
-        - AUR
-        - Nix
-        - Deb
-        - RPM
-        - Other Linux package managers
-        - Via editor/IDE
-        - asdf/mise-en-place
-        - Other
+      label: Description
+      description: A clear and concise description of the bug
+      placeholder: What went wrong?
     validations:
       required: true
 
   - type: textarea
-    id: problem
+    id: steps
     attributes:
-      label: Description of the problem
-      placeholder: Your problem description
-    validations:
-      required: true
-
-  - type: input
-    id: version
-    attributes:
-      label: Version of golangci-lint
-      description: "Copy and paste the output of `golangci-lint --version`."
-      placeholder: golangci-lint has version 2.x.x built with go1.x.x from xxxx on xxxx-xx-xx
+      label: Steps to Reproduce
+      description: Steps to reproduce the behavior
+      placeholder: |
+        1. Run command `...`
+        2. See error `...`
     validations:
       required: true
 
   - type: textarea
-    id: config
+    id: expected
     attributes:
-      label: Configuration
-      value: |-
-        <details>
-
-        ```console
-        # paste configuration file or CLI flags here
-        ```
-
-        </details>
+      label: Expected Behavior
+      description: What did you expect to happen?
+      placeholder: Describe the expected behavior
     validations:
       required: true
 
   - type: textarea
-    id: go-env
+    id: actual
     attributes:
-      label: Go environment
-      description: "Copy and paste the output of `go version && go env`."
-      value: |-
-        <details>
-
-        ```console
-        # paste output here
-        ```
-
-        </details>
+      label: Actual Behavior
+      description: What actually happened?
+      placeholder: Describe the actual behavior
     validations:
       required: true
 
   - type: textarea
-    id: verbose-output
+    id: environment
     attributes:
-      label: Verbose output of running
-      description: "Run `golangci-lint cache clean` and `golangci-lint run -v` to get verbose output."
-      value: |-
-        <details>
-
-        ```console
-        # paste output here
-        ```
-
-        </details>
+      label: Environment
+      description: Please provide information about your environment
+      placeholder: |
+        - OS: [e.g., macOS 14.0, Ubuntu 22.04]
+        - Version: [e.g., v1.0.0 or commit hash]
+      render: markdown
     validations:
       required: true
 
   - type: textarea
-    id: code-example
+    id: additional
     attributes:
-      label: A minimal reproducible example or link to a public repository
-      description: If your problem is related to a private repository, a minimal reproducible example is required.
-      value: |-
-        <details>
-
-        ```go
-        // add your code here
-        ```
-
-        </details>
-    validations:
-      required: true
-
-  - type: checkboxes
-    id: validation
-    attributes:
-      label: Validation
-      options:
-        - label: Yes, I've included all the information above (example, version, config, etc.).
-          required: true
-
-  - type: checkboxes
-    id: supporter
-    attributes:
-      label: Supporter
-      description: If you find golangci-lint valuable, consider [sponsoring the project](https://donate.golangci.org) to help sustain its development. 💛
-      options:
-        - label: I am a [sponsor/backer](https://donate.golangci.org) of this project.
+      label: Additional Context
+      description: Any other context or information that might be helpful
+      placeholder: Add any other context about the problem here

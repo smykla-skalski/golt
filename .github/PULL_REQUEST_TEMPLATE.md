@@ -1,39 +1,31 @@
+# Summary
+
+<!-- Provide 1-3 bullet points describing the changes -->
+
+## Motivation
+
+<!-- Why is this change needed? What problem does it solve? -->
+
+## Implementation information
+
 <!--
+Bullet list of key implementation details:
 
-WARNING: If you don't follow the rules, the pull request will be closed.
-
+- Technical decisions made
+- Files/components modified
+- Notable patterns or approaches used
 -->
 
 <!--
-Please keep the description brief.
--->
+Supporting documentation (optional):
 
-<!--
+Uncomment and use this section when you have relevant links to add.
+Do NOT use placeholder values like "N/A", "none", or "-".
+If there's nothing to link, simply omit this section entirely.
 
-We use Dependabot to update dependencies (linters included).
-The updates happen at least automatically once a week (Sunday 11am UTC).
+## Supporting documentation
 
-Non-versioned dependencies are managed by the golangci-lint maintainers.
-
-No pull requests to update a linter will be accepted unless:
-you are the original author of the linter, AND there are important changes required (like a major version bump).
-
--->
-
-<!--
-
-If you want to add a new linter, you MUST open a discussion in the category "New Linter Proposals" and
-wait for a maintainer to approve it BEFORE opening a pull request.
-
-https://github.com/golangci/golangci-lint/discussions/new?category=new-linter-proposals
-
-If you don't follow the previous rule, the pull request will be closed.
-
--->
-
-<!--
-
-Pull requests from a fork inside a GitHub organization are not allowed.
-Only pull requests from personal forks are allowed. 
-
+- [Issue #123](link)
+- [Related discussion](link)
+- [External documentation](link)
 -->
