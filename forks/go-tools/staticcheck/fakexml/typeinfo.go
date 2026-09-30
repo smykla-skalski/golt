@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
-	"sync"
 
 	"honnef.co/go/tools/go/types/typeutil"
 	"honnef.co/go/tools/staticcheck/fakereflect"
@@ -70,15 +69,11 @@ func (f fieldFlags) String() string {
 	}
 }
 
-var tinfoMap sync.Map // map[reflect.Type]*typeInfo
-
 // getTypeInfo returns the typeInfo structure with details necessary
-// for marshaling and unmarshaling typ.
+// for marshaling and unmarshaling typ. Unlike encoding/xml it does not cache
+// results in a process-wide map: keys would be go/types objects, which would
+// keep every analyzed package alive in a long-lived process.
 func getTypeInfo(typ fakereflect.TypeAndCanAddr) (*typeInfo, error) {
-	if ti, ok := tinfoMap.Load(typ); ok {
-		return ti.(*typeInfo), nil
-	}
-
 	tinfo := &typeInfo{}
 	if typ.IsStruct() && !typeutil.IsTypeWithName(typ.Type, "encoding/xml.Name") {
 		n := typ.NumField()
@@ -129,8 +124,7 @@ func getTypeInfo(typ fakereflect.TypeAndCanAddr) (*typeInfo, error) {
 		}
 	}
 
-	ti, _ := tinfoMap.LoadOrStore(typ, tinfo)
-	return ti.(*typeInfo), nil
+	return tinfo, nil
 }
 
 // StructFieldInfo builds and returns a fieldInfo for f.
