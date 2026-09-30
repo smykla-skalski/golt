@@ -56,7 +56,14 @@ func run(pass *analysis.Pass) (any, error) {
 	// Analysis.Run on a package will see only IR objects belonging
 	// to a single Program.
 
+	factsOnly := driver.FactsOnly != nil && driver.FactsOnly(pass)
+
 	mode := ir.GlobalDebug
+	if factsOnly {
+		// Debug references map values back to source expressions for
+		// diagnostics, which facts-only passes discard.
+		mode = 0
+	}
 	if Debug.Mode != 0 {
 		mode = Debug.Mode
 	}
@@ -65,7 +72,7 @@ func run(pass *analysis.Pass) (any, error) {
 
 	prog.SetNoReturn(cfgs.NoReturn)
 
-	if driver.FactsOnly != nil && driver.FactsOnly(pass) {
+	if factsOnly {
 		prog.SetBodyFilter(func(fn *ir.Function) bool {
 			return !FactsNeedBody(fn.Signature)
 		})
