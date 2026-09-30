@@ -8,15 +8,19 @@ import (
 	"go/build"
 	"go/parser"
 	"go/scanner"
+	"go/token"
 	"go/types"
 	"io"
 	"os"
 	"reflect"
+	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/gcexportdata"
 	"golang.org/x/tools/go/packages"
 
@@ -200,9 +204,95 @@ func (lp *loadingPackage) persistFactsToCache() error {
 		factCacheKey(cacheAct.runner.prefix, lp.actions), factsByAnalyzer)
 }
 
-func (lp *loadingPackage) loadFromSource(loadMode LoadMode) error {
-	lp.scheduler.sourceLoaded()
+// syntaxTrustedPackages hold analyzers known not to read the deprecated
+// ast.Ident.Obj resolution (and golangci-lint's staticcheck config analyzer,
+// which reads no syntax).
+var syntaxTrustedPackages = []string{
+	"golang.org/x/tools/",
+	"honnef.co/go/tools/",
+	"github.com/golangci/golangci-lint/v2/pkg/golinters/staticcheck.",
+}
 
+var analyzerSyntaxTrust sync.Map // *analysis.Analyzer -> bool
+
+// skipsObjectResolution reports whether the package's files can be parsed
+// without identifier resolution: it is a dependency, loaded only so that fact
+// analyzers can run, and all of them are known not to use ast.Ident.Obj.
+// Resolution is ~7% of parsing a dependency closure.
+func (lp *loadingPackage) skipsObjectResolution() bool {
+	if lp.isInitial || len(lp.actions) == 0 {
+		return false
+	}
+
+	for _, act := range lp.actions {
+		if !trustsSyntaxUse(act.Analyzer) {
+			return false
+		}
+	}
+
+	return true
+}
+
+func trustsSyntaxUse(a *analysis.Analyzer) bool {
+	if trusted, ok := analyzerSyntaxTrust.Load(a); ok {
+		return trusted.(bool)
+	}
+
+	trusted := false
+	if a.Run != nil {
+		if fn := runtime.FuncForPC(reflect.ValueOf(a.Run).Pointer()); fn != nil {
+			name := fn.Name()
+			trusted = slices.ContainsFunc(syntaxTrustedPackages, func(prefix string) bool {
+				return strings.HasPrefix(name, prefix)
+			})
+		}
+	}
+
+	analyzerSyntaxTrust.Store(a, trusted)
+
+	return trusted
+}
+
+// Entries recorded per KiB of non-comment source, measured on the standard
+// library and Kuma's dependency closure and rounded down: presizing avoids
+// rehashing while the type checker fills the maps, which cost ~5% of a cold
+// run's CPU, and an underestimate costs at most one growth.
+const (
+	typesPerKiB      = 90
+	usesPerKiB       = 50
+	defsPerKiB       = 12
+	scopesPerKiB     = 10
+	selectionsPerKiB = 6
+	implicitsPerKiB  = 2
+)
+
+func newTypesInfo(fset *token.FileSet, files []*ast.File) *types.Info {
+	var size int
+	for _, f := range files {
+		if tf := fset.File(f.Pos()); tf != nil {
+			size += tf.Size()
+		}
+
+		for _, c := range f.Comments {
+			size -= int(c.End() - c.Pos())
+		}
+	}
+
+	kib := max(size, 0) / 1024
+
+	return &types.Info{
+		Types:        make(map[ast.Expr]types.TypeAndValue, kib*typesPerKiB),
+		Instances:    make(map[*ast.Ident]types.Instance),
+		Defs:         make(map[*ast.Ident]types.Object, kib*defsPerKiB),
+		Uses:         make(map[*ast.Ident]types.Object, kib*usesPerKiB),
+		Implicits:    make(map[ast.Node]types.Object, kib*implicitsPerKiB),
+		Selections:   make(map[*ast.SelectorExpr]*types.Selection, kib*selectionsPerKiB),
+		Scopes:       make(map[ast.Node]*types.Scope, kib*scopesPerKiB),
+		FileVersions: make(map[*ast.File]string, len(files)),
+	}
+}
+
+func (lp *loadingPackage) parseFiles() {
 	pkg := lp.pkg
 
 	// Many packages have few files, much fewer than there
@@ -210,15 +300,28 @@ func (lp *loadingPackage) loadFromSource(loadMode LoadMode) error {
 	// very fast. A naive parallel implementation of this loop won't
 	// be faster, and tends to be slower due to extra scheduling,
 	// bookkeeping and potentially false sharing of cache lines.
+	parseMode := parser.ParseComments
+	if lp.skipsObjectResolution() {
+		parseMode |= parser.SkipObjectResolution
+	}
+
 	pkg.Syntax = make([]*ast.File, 0, len(pkg.CompiledGoFiles))
 	for _, file := range pkg.CompiledGoFiles {
-		f, err := parser.ParseFile(pkg.Fset, file, nil, parser.ParseComments)
+		f, err := parser.ParseFile(pkg.Fset, file, nil, parseMode)
 		if err != nil {
 			pkg.Errors = append(pkg.Errors, lp.convertError(err)...)
 			continue
 		}
 		pkg.Syntax = append(pkg.Syntax, f)
 	}
+}
+
+func (lp *loadingPackage) loadFromSource(loadMode LoadMode) error {
+	lp.scheduler.sourceLoaded()
+
+	pkg := lp.pkg
+
+	lp.parseFiles()
 	if len(pkg.Errors) != 0 {
 		pkg.IllTyped = true
 		return nil
@@ -240,16 +343,7 @@ func (lp *loadingPackage) loadFromSource(loadMode LoadMode) error {
 
 	pkg.IllTyped = true
 
-	pkg.TypesInfo = &types.Info{
-		Types:        make(map[ast.Expr]types.TypeAndValue),
-		Instances:    make(map[*ast.Ident]types.Instance),
-		Defs:         make(map[*ast.Ident]types.Object),
-		Uses:         make(map[*ast.Ident]types.Object),
-		Implicits:    make(map[ast.Node]types.Object),
-		Selections:   make(map[*ast.SelectorExpr]*types.Selection),
-		Scopes:       make(map[ast.Node]*types.Scope),
-		FileVersions: make(map[*ast.File]string),
-	}
+	pkg.TypesInfo = newTypesInfo(pkg.Fset, pkg.Syntax)
 
 	importer := func(path string) (*types.Package, error) {
 		if path == unsafePkgName {
