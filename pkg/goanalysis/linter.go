@@ -54,12 +54,12 @@ func NewLinterFromAnalyzer(analyzer *analysis.Analyzer) *Linter {
 	return NewLinter(analyzer.Name, analyzer.Doc, []*analysis.Analyzer{analyzer}, nil)
 }
 
-func (lnt *Linter) Run(_ context.Context, lintCtx *linter.Context) ([]*result.Issue, error) {
+func (lnt *Linter) Run(ctx context.Context, lintCtx *linter.Context) ([]*result.Issue, error) {
 	if err := lnt.preRun(lintCtx); err != nil {
 		return nil, err
 	}
 
-	return runAnalyzers(lnt, lintCtx)
+	return runAnalyzers(ctx, lnt, lintCtx)
 }
 
 func (lnt *Linter) getLinterNames() []string {

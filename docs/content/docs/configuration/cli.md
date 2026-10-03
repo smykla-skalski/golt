@@ -26,6 +26,11 @@ weight: 1
 
 {{% golangci/cli-output cmd="run" %}}
 
+Concurrent runs wait for the file lock by default. While waiting, a progress message appears on stderr.
+Editor integrations can pass `--request-key=editor` on every run to cancel an older run
+with the same key from the same working directory. Use a distinct key for each editor or workflow.
+The cancelled run exits with code 3. Keep the editor's working directory stable between calls.
+
 When the `--cpu-profile-path` or `--mem-profile-path` arguments are specified,
 golangci-lint writes runtime profiling data in the format expected by the [pprof](https://github.com/google/pprof) visualization tool.
 

@@ -24,6 +24,7 @@ Install the [extension](https://marketplace.visualstudio.com/items?itemName=gola
 "go.lintTool": "golangci-lint",
 "go.lintFlags": [
   "--path-mode=abs",
+  "--request-key=vscode",
   "--fast-only"
 ],
 "go.formatTool": "custom",
@@ -51,6 +52,7 @@ And use the following settings:
 "go.lintTool": "golangci-lint-v2",
 "go.lintFlags": [
   "--path-mode=abs",
+  "--request-key=vscode",
   "--fast-only"
 ],
 "go.formatTool": "custom",
@@ -128,4 +130,3 @@ source ~/.bashrc
 ## CI Integration
 
 Check out our [documentation for CI integrations](/docs/welcome/install#ci-installation).
-

@@ -1,5 +1,67 @@
 # Benchmarks
 
+## Developer workflow benchmark (CI only)
+
+Measured results: [developer workflow benchmark](local-workflow-results.md).
+
+Push branch `perf/local-workflow` to run the `Performance benchmark` workflow's
+`local-workflow` jobs. They build golt on GitHub Actions, clone pinned small
+and Kuma API workloads, seed the Go cache, and compare editor-like requests
+under these policies:
+
+| Case | Policy tested |
+| --- | --- |
+| `serial` | One request at a time, two Go CPUs each. |
+| `native_serial` | Three simultaneous requests using golt's default lock queue. |
+| `serial_gc` | Serial with golt's GC policy. |
+| `parallel` | Three overlapping requests, two Go CPUs each. |
+| `bounded` | Two overlapping requests, one Go CPU each. |
+| `fork_gc` | Bounded overlap with golt's default GC policy. |
+| `daemon` | Serial requests through the existing warm daemon. |
+| `supersede` | Terminate a stale request before the next starts. |
+| `native_supersede` | Three overlapping requests using `--request-key` and the built-in lock queue. |
+| `split` | Run govet, staticcheck, and unused in separate processes. |
+
+The job records each request's wall time, exit code, normalized diagnostic hash,
+process-tree peak RSS, batch makespan, and aggregate peak RSS. It rejects changed
+diagnostics and enforces a 3 GiB aggregate RSS ceiling. All linter workloads run
+on CI; local checks of the harness should be syntax and configuration checks.
+Each case also emits a GitHub Actions annotation with its median makespan and
+maximum aggregate RSS, readable through the public check-run annotations API.
+The bounded case simulates shared admission; it does not add admission to the
+product. The supersede case measures process cancellation; native supersede
+measures analyzer context cancellation. Daemon RSS excludes its detached server process. The larger Kuma
+case makes a unique source edit before each batch and covers serial, parallel,
+bounded, GC, daemon, and stale-request cancellation variants with five
+repetitions.
+
+## Upstream comparison (CI only)
+
+Measured results: [upstream versus golt](upstream-vs-golt-results.md).
+
+Dispatch `Performance benchmark` with `local_workflow=false`,
+`upstream_tag=v2.14.0`, and the desired workload and cache mode. The hosted job
+fetches that official release, builds both binaries with Go 1.26, runs seven
+single-invocation samples per binary in both execution orders, and compares
+their JSON diagnostics. The run summary reports wall time, CPU time, peak
+process-tree RSS, and cache size; artifacts include raw samples and build
+metadata. For the usual developer path, use `small` with `cold,warm` and `large`
+with `edit` to measure a source change. Use `large` with `cold` to measure an
+empty analysis cache on the pinned Kuma API subset. “Cold” keeps the Go build
+and module caches warm; it does not reproduce a Kuma CI job with a missing Go
+build cache. The subset runs `./api/...`, disables tests, and enables only
+`govet`, `staticcheck`, and `unused`.
+
+For an upstream comparison of overlapping requests, dispatch the same workflow
+with `upstream_parallel=true` and `upstream_tag=v2.14.0`. It runs both binaries
+on the pinned small and Kuma API workloads. Each policy sends three requests:
+externally serialized or simultaneous with `--allow-parallel-runners`. The
+small workload has a warm analysis cache; Kuma receives the same unique source
+edit for both binaries before each paired run. Five repetitions alternate
+binary order, use isolated per-binary analysis caches, compare diagnostics,
+and report median batch makespan plus maximum aggregate process-tree RSS.
+Raw requests and build metadata are uploaded as CI artifacts.
+
 The script use [Hyperfine](https://github.com/sharkdp/hyperfine) to benchmark the command line of golangci-lint.
 
 ## Reproducible baseline

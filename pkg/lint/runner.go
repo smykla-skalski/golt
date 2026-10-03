@@ -175,6 +175,9 @@ func (r *Runner) Run(ctx context.Context, linters []*linter.Config) ([]*result.I
 	)
 
 	for _, lc := range linters {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		var started time.Time
 		if r.lintCtx.Lifecycle != nil {
 			started = time.Now()
@@ -194,6 +197,10 @@ func (r *Runner) Run(ctx context.Context, linters []*linter.Config) ([]*result.I
 		}
 
 		issues = append(issues, linterIssues...)
+	}
+
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
 
 	return r.processLintResults(issues), lintErrors

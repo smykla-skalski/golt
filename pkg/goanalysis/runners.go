@@ -1,6 +1,7 @@
 package goanalysis
 
 import (
+	"context"
 	"fmt"
 	"go/token"
 	"slices"
@@ -37,7 +38,7 @@ type analysisLifecycle struct {
 	linterIndexes map[string]int
 }
 
-func runAnalyzers(cfg runAnalyzersConfig, lintCtx *linter.Context) (retIssues []*result.Issue, retErr error) {
+func runAnalyzers(ctx context.Context, cfg runAnalyzersConfig, lintCtx *linter.Context) (retIssues []*result.Issue, retErr error) {
 	log := lintCtx.Log.Child(logutils.DebugKeyGoAnalysis)
 	sw := timeutils.NewStopwatch("analyzers", log)
 
@@ -53,6 +54,9 @@ func runAnalyzers(cfg runAnalyzersConfig, lintCtx *linter.Context) (retIssues []
 	}
 
 	issues, pkgsFromCache := loadIssuesFromCache(pkgs, lintCtx, cfg.getAnalyzers())
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	var pkgsToAnalyze []*packages.Package
 	for _, pkg := range pkgs {
 		if !pkgsFromCache[pkg] {
@@ -67,7 +71,10 @@ func runAnalyzers(cfg runAnalyzersConfig, lintCtx *linter.Context) (retIssues []
 		defer func() { metrics.finishRecovered(retIssues, retErr, recover()) }()
 	}
 
-	diags, errs, passToPkg := runner.run(cfg.getAnalyzers(), pkgsToAnalyze, statsReady)
+	diags, errs, passToPkg := runner.run(ctx, cfg.getAnalyzers(), pkgsToAnalyze, statsReady)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 
 	defer func() {
 		if len(errs) == 0 {

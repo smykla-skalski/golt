@@ -125,15 +125,18 @@ func newRunner(prefix string, logger logutils.Log, pkgCache *cache.Cache, loadGu
 // It provides most of the logic for the main functions of both the
 // singlechecker and the multi-analysis commands.
 // It returns the appropriate exit code.
-func (r *runner) run(analyzers []*analysis.Analyzer, initialPackages []*packages.Package,
+func (r *runner) run(ctx context.Context, analyzers []*analysis.Analyzer, initialPackages []*packages.Package,
 	statsReady func(*analysisStats),
 ) ([]*Diagnostic, []error, map[*analysis.Pass]*packages.Package,
 ) {
 	debugf("Analyzing %d packages on load mode %s", len(initialPackages), r.loadMode)
 
-	roots, stats := r.analyze(initialPackages, analyzers)
+	roots, stats := r.analyze(ctx, initialPackages, analyzers)
 	if statsReady != nil {
 		statsReady(&stats)
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, []error{err}, r.passToPkg
 	}
 
 	diags, errs := extractDiagnostics(roots)
@@ -273,7 +276,7 @@ func (r *runner) prepareAnalysis(pkgs []*packages.Package,
 	return initialPkgs, allActions, roots
 }
 
-func (r *runner) analyze(pkgs []*packages.Package, analyzers []*analysis.Analyzer) ([]*action, analysisStats) {
+func (r *runner) analyze(ctx context.Context, pkgs []*packages.Package, analyzers []*analysis.Analyzer) ([]*action, analysisStats) {
 	initialPkgs, actions, rootActions := r.prepareAnalysis(pkgs, analyzers)
 	var scheduler schedulerStats
 	if r.scheduler != nil {
@@ -338,7 +341,7 @@ func (r *runner) analyze(pkgs []*packages.Package, analyzers []*analysis.Analyze
 
 	debugf("There are %d initial and %d total packages", len(initialPkgs), len(loadingPackages))
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
 	var wg sync.WaitGroup

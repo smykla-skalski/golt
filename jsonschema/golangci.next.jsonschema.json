@@ -4946,7 +4946,7 @@
         "allow-serial-runners": {
           "description": "Allow multiple golangci-lint instances running, but serialize them around a lock.",
           "type": "boolean",
-          "default": false
+          "default": true
         },
         "go": {
           "description": "Targeted Go version.",

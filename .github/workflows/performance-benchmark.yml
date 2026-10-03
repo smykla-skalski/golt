@@ -1,8 +1,21 @@
 name: Performance benchmark
 
 on:
+  push:
+    branches:
+      - perf/local-workflow
   workflow_dispatch:
     inputs:
+      local_workflow:
+        description: Benchmark simultaneous developer requests
+        required: true
+        default: false
+        type: boolean
+      upstream_parallel:
+        description: Compare upstream and golt simultaneous requests
+        required: true
+        default: false
+        type: boolean
       candidate_ref:
         description: Candidate git ref
         required: true
@@ -12,6 +25,11 @@ on:
         description: Baseline git ref
         required: true
         default: HEAD^
+        type: string
+      upstream_tag:
+        description: Official upstream release tag (overrides baseline_ref)
+        required: false
+        default: ''
         type: string
       workload:
         description: Workload
@@ -59,7 +77,7 @@ concurrency:
 
 jobs:
   benchmark:
-    if: github.repository == 'smykla-skalski/golt'
+    if: github.repository == 'smykla-skalski/golt' && github.event_name == 'workflow_dispatch' && !inputs.local_workflow && !inputs.upstream_parallel
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     env:
@@ -68,6 +86,7 @@ jobs:
       GOFLAGS: -p=2
       CANDIDATE_REF: ${{ inputs.candidate_ref }}
       BASELINE_REF: ${{ inputs.baseline_ref }}
+      UPSTREAM_TAG: ${{ inputs.upstream_tag }}
       WORKLOAD: ${{ inputs.workload }}
       SCENARIO: ${{ inputs.scenario }}
       CACHE_MODE: ${{ inputs.cache_mode }}
@@ -83,11 +102,23 @@ jobs:
           go-version: 1.26.0
           cache: false
 
+      - name: Resolve baseline
+        run: |
+          if [[ -n "$UPSTREAM_TAG" ]]; then
+            git fetch --no-tags https://github.com/golangci/golangci-lint.git \
+              "refs/tags/${UPSTREAM_TAG}:refs/tags/benchmark-upstream"
+            echo "BENCH_BASELINE_REF=refs/tags/benchmark-upstream" >> "$GITHUB_ENV"
+            echo "BENCH_BASELINE_LABEL=$UPSTREAM_TAG" >> "$GITHUB_ENV"
+          else
+            echo "BENCH_BASELINE_REF=$BASELINE_REF" >> "$GITHUB_ENV"
+            echo "BENCH_BASELINE_LABEL=$BASELINE_REF" >> "$GITHUB_ENV"
+          fi
+
       - name: Build candidate and baseline
         run: |
           go run ./scripts/bench/build_pair \
             --candidate-ref "$CANDIDATE_REF" \
-            --upstream-ref "$BASELINE_REF" \
+            --upstream-ref "$BENCH_BASELINE_REF" \
             --baseline-mode exact \
             --out-dir dist/bench/bin \
             --build-timeout 5m \
@@ -130,13 +161,29 @@ jobs:
             --out dist/bench/hosted/baseline-first \
             "${common_args[@]}"
 
+      - name: Compare diagnostics
+        run: |
+          go run ./scripts/bench/baseline \
+            --manifest scripts/bench/baseline.json \
+            --fork-bin dist/bench/bin/fork \
+            --upstream-bin dist/bench/bin/upstream \
+            --out dist/bench/hosted/compatibility \
+            --workload "$WORKLOAD" \
+            --scenario "$SCENARIO" \
+            --concurrency 2 \
+            --compatibility \
+            --run-timeout 2m \
+            --max-rss-mib 1024 \
+            --go-max-procs 2 \
+            --nice 10
+
       - name: Summarize results
         if: always()
         run: |
           {
             echo "## ${WORKLOAD} / ${SCENARIO} (${CACHE_MODE})"
             echo
-            echo "Candidate \`${CANDIDATE_REF}\` vs baseline \`${BASELINE_REF}\`."
+            echo "Candidate \`${CANDIDATE_REF}\` vs baseline \`${BENCH_BASELINE_LABEL}\`."
             echo
             go run ./scripts/bench/summary dist/bench/hosted
           } >> "$GITHUB_STEP_SUMMARY"
@@ -152,4 +199,165 @@ jobs:
             !dist/bench/hosted/**/workloads/**
             !dist/bench/hosted/**/cache/**
           if-no-files-found: error
+          retention-days: 14
+
+  upstream-parallel:
+    if: github.repository == 'smykla-skalski/golt' && github.event_name == 'workflow_dispatch' && inputs.upstream_parallel && inputs.upstream_tag != ''
+    name: upstream-parallel (${{ matrix.workload }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        workload: [small, large]
+    env:
+      GOMAXPROCS: 2
+      GOMEMLIMIT: 1024MiB
+      GOFLAGS: -p=2
+      GOLT_WORKFLOW_PACKAGES: ${{ matrix.workload == 'large' && './api/...' || './...' }}
+      GOLT_WORKFLOW_TESTS: ${{ matrix.workload == 'large' && 'false' || 'true' }}
+      GOLT_WORKFLOW_MEMORY_LIMIT: ${{ matrix.workload == 'large' && '768MiB' || '512MiB' }}
+      GOLT_WORKFLOW_EDIT_FILE: ${{ matrix.workload == 'large' && 'api/system/v1alpha1/datasource_helpers.go' || '' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: 1.26.0
+          cache: false
+
+      - name: Build both binaries
+        env:
+          CANDIDATE_REF: ${{ inputs.candidate_ref }}
+          UPSTREAM_TAG: ${{ inputs.upstream_tag }}
+        run: |
+          git fetch --no-tags https://github.com/golangci/golangci-lint.git \
+            "refs/tags/${UPSTREAM_TAG}:refs/tags/benchmark-upstream"
+          go run ./scripts/bench/build_pair \
+            --candidate-ref "$CANDIDATE_REF" \
+            --upstream-ref refs/tags/benchmark-upstream \
+            --baseline-mode exact \
+            --out-dir dist/bench/bin \
+            --build-timeout 5m \
+            --max-memory-mib 1024 \
+            --go-max-procs 2 \
+            --nice 10
+
+      - name: Prepare pinned workload
+        env:
+          WORKLOAD: ${{ matrix.workload }}
+        run: |
+          if [[ "$WORKLOAD" == "large" ]]; then
+            git clone --filter=blob:none https://github.com/kumahq/kuma.git dist/bench/workload
+            git -C dist/bench/workload checkout --detach 12fbf5f561e00b5f71eb5e72dc82e1a9eb4f9e87
+          else
+            git clone --filter=blob:none https://github.com/Automaat/cache-buster.git dist/bench/workload
+            git -C dist/bench/workload checkout --detach 1ed2641a75cb424a592fa3eddf76da32180e7ed4
+          fi
+
+      - name: Compare simultaneous requests
+        env:
+          WORKLOAD: ${{ matrix.workload }}
+        run: |
+          python3 scripts/bench/compare_parallel.py \
+            --upstream-bin dist/bench/bin/upstream \
+            --golt-bin dist/bench/bin/fork \
+            --workdir dist/bench/workload \
+            --out dist/bench/upstream-parallel \
+            --profile "$WORKLOAD" \
+            --repetitions 5
+          cat dist/bench/upstream-parallel/summary.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: upstream-parallel-${{ matrix.workload }}
+          path: |
+            dist/bench/bin/pair.json
+            dist/bench/upstream-parallel/*.json
+            dist/bench/upstream-parallel/*.md
+            dist/bench/upstream-parallel/*.stdout
+            dist/bench/upstream-parallel/*.stderr
+          if-no-files-found: warn
+          retention-days: 14
+
+  local-workflow:
+    if: github.repository == 'smykla-skalski/golt' && (github.event_name == 'push' || inputs.local_workflow)
+    name: local-workflow (${{ matrix.workload }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        workload: [small, large]
+    env:
+      GOLT_WORKFLOW_PACKAGES: ${{ matrix.workload == 'large' && './api/...' || './...' }}
+      GOLT_WORKFLOW_TESTS: ${{ matrix.workload == 'large' && 'false' || 'true' }}
+      GOLT_WORKFLOW_MEMORY_LIMIT: ${{ matrix.workload == 'large' && '768MiB' || '512MiB' }}
+      GOLT_WORKFLOW_EDIT_FILE: ${{ matrix.workload == 'large' && 'api/system/v1alpha1/datasource_helpers.go' || '' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: 1.26.0
+          cache: false
+
+      - name: Build linter
+        env:
+          GOMAXPROCS: '2'
+          GOMEMLIMIT: 1024MiB
+          GOFLAGS: -p=2
+        run: |
+          mkdir -p dist/bench
+          go build -o dist/bench/golangci-lint ./cmd/golangci-lint
+
+      - name: Prepare pinned workload
+        env:
+          WORKLOAD: ${{ matrix.workload }}
+        run: |
+          if [[ "$WORKLOAD" == "large" ]]; then
+            git clone --filter=blob:none https://github.com/kumahq/kuma.git dist/bench/workload
+            git -C dist/bench/workload checkout --detach 12fbf5f561e00b5f71eb5e72dc82e1a9eb4f9e87
+          else
+            git clone --filter=blob:none https://github.com/Automaat/cache-buster.git dist/bench/workload
+            git -C dist/bench/workload checkout --detach 1ed2641a75cb424a592fa3eddf76da32180e7ed4
+          fi
+
+      - name: Benchmark editor requests
+        env:
+          WORKLOAD: ${{ matrix.workload }}
+        run: |
+          set -o pipefail
+          if [[ "$WORKLOAD" == "large" ]]; then
+            repetitions=5
+          else
+            repetitions=3
+          fi
+          python3 scripts/bench/local_workflow.py \
+            --binary dist/bench/golangci-lint \
+            --workdir dist/bench/workload \
+            --out dist/bench/local-workflow \
+            --profile "$WORKLOAD" \
+            --repetitions "$repetitions" | tee dist/bench/local-workflow-summary.md
+          cat dist/bench/local-workflow-summary.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Report public measurements
+        run: python3 scripts/bench/report_local_workflow.py dist/bench/local-workflow/results.json
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: local-workflow-${{ matrix.workload }}
+          path: |
+            dist/bench/local-workflow
+            dist/bench/local-workflow-summary.md
+          if-no-files-found: warn
           retention-days: 14
