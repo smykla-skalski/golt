@@ -102,8 +102,8 @@ func userStateDir() (string, error) {
 
 func writeRequestIdentity(path, identity string) (err error) {
 	lock := flock.New(path)
-	if err := lock.Lock(); err != nil {
-		return fmt.Errorf("lock request: %w", err)
+	if lockErr := lock.Lock(); lockErr != nil {
+		return fmt.Errorf("lock request: %w", lockErr)
 	}
 	defer func() { err = errors.Join(err, lock.Unlock()) }()
 
@@ -112,8 +112,8 @@ func writeRequestIdentity(path, identity string) (err error) {
 
 func readRequestIdentity(path string) (identity string, err error) {
 	lock := flock.New(path)
-	if err := lock.Lock(); err != nil {
-		return "", fmt.Errorf("lock request: %w", err)
+	if lockErr := lock.Lock(); lockErr != nil {
+		return "", fmt.Errorf("lock request: %w", lockErr)
 	}
 	defer func() { err = errors.Join(err, lock.Unlock()) }()
 

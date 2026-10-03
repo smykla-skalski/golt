@@ -629,8 +629,8 @@ func (c *runCommand) acquireFileLock() error {
 		}
 		ok, err = f.TryLockContext(ctx, retryDelay)
 	}
-	if err := c.fileLockWaitError(ctx, f, ok, err); err != nil {
-		return err
+	if waitErr := c.fileLockWaitError(ctx, f, ok, err); waitErr != nil {
+		return waitErr
 	}
 
 	c.flock = f
