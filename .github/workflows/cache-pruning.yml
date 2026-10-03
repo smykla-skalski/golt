@@ -51,7 +51,6 @@ jobs:
 
   compare:
     needs: build
-    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     strategy:
@@ -83,7 +82,7 @@ jobs:
             --workload kuma-pr \
             --scenario configured \
             --concurrency 4 \
-            --cache-mode edit \
+            --cache-mode warm,edit \
             --runs 3 \
             --prepare=true \
             --isolate-go-build-cache \

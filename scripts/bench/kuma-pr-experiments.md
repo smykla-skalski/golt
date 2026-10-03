@@ -51,6 +51,30 @@ package loading took 7m51s upstream and 7m53s golt, while analyzer time was
 restoring the Go build cache is larger than the
 remaining golt-versus-upstream difference on this cache-miss workload.
 
+## Pruning work after a dependency edit
+
+The [cache-pruning CI run](https://github.com/smykla-skalski/golt/actions/runs/37145624122)
+compares merged golt `main` with a candidate that caches package-scoped
+diagnostics from fact-free analyzers by the package's own source and the
+compiler export data of its direct imports. Analyzers that consume facts keep
+the full dependency hash. The candidate also caches package-scoped issues
+from gosec, revive, and unconvert. Both binaries use `GOGC=80`, a 6 GiB soft
+memory limit, four Go CPUs, and separate Go build and analysis caches. The
+table shows medians of three comment-only edited runs, after seeding the
+analysis cache. RSS is median peak process-tree memory.
+
+| Order | Merged main | Pruned candidate | Change | Main RSS | Candidate RSS |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Main first | 43.25 s | 22.07 s | 49.0% faster | 2,504 MiB | 2,251 MiB |
+| Candidate first | 43.19 s | 21.93 s | 49.2% faster | 2,418 MiB | 2,218 MiB |
+
+The same CI run compared the full Kuma JSON diagnostics before and after the
+edit with warmed, separate caches. The candidate and main matched in both
+cases. The first version, which excluded issue reporters, saved only 6.8–10.7%
+on the edited run in a separate [CI experiment](https://github.com/smykla-skalski/golt/actions/runs/37143100560)
+using the default GC policy. That established that reporter-backed linters
+were the large remaining source of repeated work.
+
 ## Isolating the list cache
 
 This compares the **same golt binary** with `GOLT_LIST_CACHE=0` versus the
