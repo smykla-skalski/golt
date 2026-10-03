@@ -118,7 +118,7 @@ func (l *PackageLoader) loadWithListCache(ctx context.Context, conf *packages.Co
 		cacheStart := time.Now()
 		pkgs, status := lc.loadWithStatus()
 		l.debugf("Go list cache %s after %s", status, time.Since(cacheStart))
-		if status == "hit" {
+		if status == listCacheHit {
 			l.debugf("Reused go list result %s", lc.key)
 
 			return pkgs, nil

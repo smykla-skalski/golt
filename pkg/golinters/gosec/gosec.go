@@ -71,6 +71,7 @@ func New(settings *config.GoSecSettings) *goanalysis.Linter {
 		WithIssuesReporter(func(*linter.Context) []*goanalysis.Issue {
 			return resIssues
 		}).
+		WithCacheableIssuesReporter().
 		WithLoadMode(goanalysis.LoadModeTypesInfo)
 }
 

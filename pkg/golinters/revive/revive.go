@@ -72,6 +72,7 @@ func New(settings *config.ReviveSettings) *goanalysis.Linter {
 		WithIssuesReporter(func(*linter.Context) []*goanalysis.Issue {
 			return resIssues
 		}).
+		WithCacheableIssuesReporter().
 		WithLoadMode(goanalysis.LoadModeSyntax)
 }
 

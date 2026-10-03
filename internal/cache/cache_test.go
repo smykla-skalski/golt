@@ -3,6 +3,8 @@ package cache
 import (
 	"bytes"
 	"fmt"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -141,6 +143,51 @@ func TestCache_packageHash_store(t *testing.T) {
 	assert.Equal(t, "8978e3d76c6f99e9663558d7147a7790f229a676804d1fde706a611898547b74", hashRes[HashModeNeedOnlySelf])
 	assert.Equal(t, "b1aef902a0619b5cbfc2d6e2e91a73dd58dd448e58274b2d7a5ff8efd97aefa4", hashRes[HashModeNeedDirectDeps])
 	assert.Equal(t, "9c602ef861197b6807e82c99caa7c4042eb03c1a92886303fb02893744355131", hashRes[HashModeNeedAllDeps])
+}
+
+func TestCache_exportDepsHash_fallsBackWithoutExportFile(t *testing.T) {
+	pkgCache := setupCache(t)
+	pkg := fakePackage()
+
+	fullHash, err := pkgCache.packageHash(pkg, HashModeNeedAllDeps)
+	require.NoError(t, err)
+	exportHash, err := pkgCache.packageHash(pkg, HashModeNeedExportDeps)
+	require.NoError(t, err)
+	assert.Equal(t, fullHash, exportHash)
+}
+
+func TestCache_exportDepsHash_prunesDependencyBodyEdits(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "go.mod"),
+		[]byte("module example.com/pruning\n\ngo 1.26.0\n"), 0o600))
+	require.NoError(t, os.Mkdir(filepath.Join(dir, "dep"), 0o700))
+	require.NoError(t, os.Mkdir(filepath.Join(dir, "user"), 0o700))
+	depFile := filepath.Join(dir, "dep", "dep.go")
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "user", "user.go"),
+		[]byte("package user\nimport \"example.com/pruning/dep\"\nvar Value = dep.Value()\n"), 0o600))
+	loadHash := func() string {
+		t.Helper()
+		pkgs, err := packages.Load(&packages.Config{
+			Dir: dir,
+			Mode: packages.NeedName | packages.NeedModule | packages.NeedCompiledGoFiles |
+				packages.NeedImports | packages.NeedDeps | packages.NeedExportFile,
+		}, "./user")
+		require.NoError(t, err)
+		require.Len(t, pkgs, 1)
+		require.Empty(t, pkgs[0].Errors)
+		hash, err := setupCache(t).packageHash(pkgs[0], HashModeNeedExportDeps)
+		require.NoError(t, err)
+		return hash
+	}
+	require.NoError(t, os.WriteFile(depFile,
+		[]byte("package dep\n//go:noinline\nfunc Value() int { return 1 }\n"), 0o600))
+	initial := loadHash()
+	require.NoError(t, os.WriteFile(depFile,
+		[]byte("package dep\n//go:noinline\nfunc Value() int { value := 1; return value }\n"), 0o600))
+	assert.Equal(t, initial, loadHash())
+	require.NoError(t, os.WriteFile(depFile,
+		[]byte("package dep\n//go:noinline\nfunc Value() string { return \"changed\" }\n"), 0o600))
+	assert.NotEqual(t, initial, loadHash())
 }
 
 func TestCache_computeHash(t *testing.T) {
