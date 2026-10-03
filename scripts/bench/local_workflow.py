@@ -224,6 +224,7 @@ def main():
     args.out.mkdir(parents=True, exist_ok=True)
     cases = [
         ("serial", 1, 2, "default", False, False),
+        ("serial_gc", 1, 2, "fast", False, False),
         ("parallel", 3, 2, "default", False, False),
         ("bounded", 2, 1, "default", False, False),
         ("fork_gc", 2, 1, "fast", False, False),
@@ -235,7 +236,15 @@ def main():
             case
             for case in cases
             if case[0]
-            in {"serial", "parallel", "bounded", "fork_gc", "daemon", "supersede"}
+            in {
+                "serial",
+                "serial_gc",
+                "parallel",
+                "bounded",
+                "fork_gc",
+                "daemon",
+                "supersede",
+            }
         ]
     timeout = 300 if args.profile == "large" else 90
     records = []

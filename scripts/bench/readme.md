@@ -12,6 +12,7 @@ under these policies:
 | Case | Policy tested |
 | --- | --- |
 | `serial` | One request at a time, two Go CPUs each. |
+| `serial_gc` | Serial with golt's GC policy. |
 | `parallel` | Three overlapping requests, two Go CPUs each. |
 | `bounded` | Two overlapping requests, one Go CPU each. |
 | `fork_gc` | Bounded overlap with golt's default GC policy. |
