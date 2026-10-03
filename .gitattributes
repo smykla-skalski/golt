@@ -2,3 +2,9 @@ go.sum linguist-generated
 assets/* linguist-generated
 *       text=auto eol=lf
 *.ps1   text eol=crlf
+
+# golt-owned files: keep ours when an upstream sync conflicts (merge.ours.driver).
+README.md merge=ours
+.github/ISSUE_TEMPLATE/bug_report.yml merge=ours
+.github/ISSUE_TEMPLATE/config.yml merge=ours
+.github/PULL_REQUEST_TEMPLATE.md merge=ours
