@@ -1,18 +1,85 @@
 package goanalysis
 
 import (
+	"context"
 	"errors"
+	"os"
+	"path/filepath"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"golang.org/x/tools/go/analysis"
+	"golang.org/x/tools/go/packages"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/golangci/golangci-lint/v2/pkg/goanalysis/load"
 	"github.com/golangci/golangci-lint/v2/pkg/lint/lifecycle"
+	"github.com/golangci/golangci-lint/v2/pkg/logutils"
 	"github.com/golangci/golangci-lint/v2/pkg/result"
+	"github.com/golangci/golangci-lint/v2/pkg/timeutils"
 )
+
+func TestRunnerStopsAnalyzerDependentsAfterParentCancellation(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "go.mod"),
+		[]byte("module example.com/cancellation\n\ngo 1.26.0\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "example.go"),
+		[]byte("package example\n"), 0o600))
+	pkgs, err := packages.Load(&packages.Config{Mode: packages.LoadAllSyntax, Dir: dir}, "./...")
+	require.NoError(t, err)
+	require.Len(t, pkgs, 1)
+
+	started := make(chan struct{})
+	release := make(chan struct{})
+	var releaseOnce sync.Once
+	unblock := func() { releaseOnce.Do(func() { close(release) }) }
+	t.Cleanup(unblock)
+	var dependentRan atomic.Bool
+	blocking := &analysis.Analyzer{Name: "blocking", Run: func(*analysis.Pass) (any, error) {
+		close(started)
+		<-release
+		return nil, nil
+	}}
+	dependent := &analysis.Analyzer{
+		Name: "dependent", Requires: []*analysis.Analyzer{blocking},
+		Run: func(*analysis.Pass) (any, error) {
+			dependentRan.Store(true)
+			return nil, nil
+		},
+	}
+	logger := logutils.NewStderrLog("")
+	r := &runner{
+		prefix: "test", log: logger, loadGuard: load.NewGuard(),
+		loadMode: LoadModeTypesInfo, passToPkg: map[*analysis.Pass]*packages.Package{},
+		sw: timeutils.NewStopwatch("test", logger),
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	t.Cleanup(cancel)
+	result := make(chan []error, 1)
+	go func() {
+		_, errs, _ := r.run(ctx, []*analysis.Analyzer{dependent}, pkgs, nil)
+		result <- errs
+	}()
+
+	select {
+	case <-started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("blocking analyzer did not start")
+	}
+	cancel()
+	unblock()
+	select {
+	case errs := <-result:
+		require.ErrorIs(t, errors.Join(errs...), context.Canceled)
+	case <-time.After(5 * time.Second):
+		t.Fatal("runner did not stop after cancellation")
+	}
+	assert.False(t, dependentRan.Load())
+}
 
 func TestCollectAnalyzerStats(t *testing.T) {
 	alpha := &analysis.Analyzer{Name: "alpha"}

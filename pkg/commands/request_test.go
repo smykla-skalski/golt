@@ -33,8 +33,15 @@ func (b *safeBuffer) String() string {
 	return b.Buffer.String()
 }
 
+func isolateUserCache(t *testing.T) {
+	t.Helper()
+	dir := t.TempDir()
+	t.Setenv("HOME", dir)
+	t.Setenv("XDG_CACHE_HOME", filepath.Join(dir, "cache"))
+}
+
 func TestSerialRunWaitsAndReportsProgress(t *testing.T) {
-	t.Setenv("TMPDIR", t.TempDir())
+	isolateUserCache(t)
 	first := &runCommand{cfg: &config.Config{}, cmd: &cobra.Command{}, debugf: func(string, ...any) {}}
 	first.cmd.SetContext(t.Context())
 	first.cfg.Run.AllowSerialRunners = true
@@ -60,12 +67,14 @@ func TestSerialRunWaitsAndReportsProgress(t *testing.T) {
 	first.releaseFileLock()
 	require.NoError(t, <-result)
 	second.releaseFileLock()
-	_, err := os.Stat(filepath.Join(os.TempDir(), "golangci-lint.lock"))
+	stateDir, err := userStateDir()
+	require.NoError(t, err)
+	_, err = os.Stat(filepath.Join(stateDir, "run.lock"))
 	require.NoError(t, err)
 }
 
 func TestRequestKeySupersedesOlderRun(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	isolateUserCache(t)
 	first := &runCommand{cmd: &cobra.Command{}, requestKey: t.Name()}
 	first.cmd.SetContext(t.Context())
 	require.NoError(t, first.beginRequest())
@@ -83,8 +92,7 @@ func TestRequestKeySupersedesOlderRun(t *testing.T) {
 }
 
 func TestSupersededRequestStopsWaitingForLock(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
-	t.Setenv("TMPDIR", t.TempDir())
+	isolateUserCache(t)
 	owner := &runCommand{cfg: &config.Config{}, cmd: &cobra.Command{}, debugf: func(string, ...any) {}}
 	owner.cmd.SetContext(t.Context())
 	owner.cfg.Run.AllowSerialRunners = true
@@ -109,4 +117,17 @@ func TestSupersededRequestStopsWaitingForLock(t *testing.T) {
 	t.Cleanup(newer.stopRequest)
 	require.ErrorIs(t, <-result, errRequestSuperseded)
 	assert.Nil(t, older.flock)
+}
+
+func TestLockTimeoutReportsParallelRun(t *testing.T) {
+	isolateUserCache(t)
+	owner := &runCommand{cfg: &config.Config{}, cmd: &cobra.Command{}, debugf: func(string, ...any) {}}
+	owner.cmd.SetContext(t.Context())
+	owner.cfg.Run.AllowSerialRunners = true
+	require.NoError(t, owner.acquireFileLock())
+	t.Cleanup(owner.releaseFileLock)
+
+	waiter := &runCommand{cfg: &config.Config{}, cmd: &cobra.Command{}, debugf: func(string, ...any) {}}
+	waiter.cmd.SetContext(t.Context())
+	require.EqualError(t, waiter.acquireFileLock(), "parallel golangci-lint is running")
 }

@@ -135,6 +135,9 @@ func (r *runner) run(ctx context.Context, analyzers []*analysis.Analyzer, initia
 	if statsReady != nil {
 		statsReady(&stats)
 	}
+	if err := ctx.Err(); err != nil {
+		return nil, []error{err}, r.passToPkg
+	}
 
 	diags, errs := extractDiagnostics(roots)
 

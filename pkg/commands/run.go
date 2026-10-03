@@ -603,7 +603,11 @@ func (c *runCommand) acquireFileLock() error {
 		return nil
 	}
 
-	lockFile := filepath.Join(os.TempDir(), "golangci-lint.lock")
+	stateDir, err := userStateDir()
+	if err != nil {
+		return err
+	}
+	lockFile := filepath.Join(stateDir, "run.lock")
 	c.debugf("Locking on file %s...", lockFile)
 	f := flock.New(lockFile)
 	const retryDelay = 250 * time.Millisecond
@@ -630,6 +634,10 @@ func (c *runCommand) acquireFileLock() error {
 			_ = f.Unlock()
 		}
 		return errRequestSuperseded
+	}
+	if !c.cfg.Run.AllowSerialRunners &&
+		errors.Is(err, context.DeadlineExceeded) && c.cmd.Context().Err() == nil {
+		return errors.New("parallel golangci-lint is running")
 	}
 	if err != nil {
 		return fmt.Errorf("acquire run lock: %w", err)

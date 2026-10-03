@@ -26,11 +26,11 @@ func (c *runCommand) beginRequest() error {
 	if err != nil {
 		return fmt.Errorf("get working directory: %w", err)
 	}
-	cacheDir, err := os.UserCacheDir()
+	stateDir, err := userStateDir()
 	if err != nil {
-		return fmt.Errorf("get cache directory: %w", err)
+		return err
 	}
-	dir := filepath.Join(cacheDir, "golt", "requests")
+	dir := filepath.Join(stateDir, "requests")
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("create request directory: %w", err)
 	}
@@ -79,6 +79,18 @@ func (c *runCommand) beginRequest() error {
 	}()
 
 	return nil
+}
+
+func userStateDir() (string, error) {
+	cacheDir, err := os.UserCacheDir()
+	if err != nil {
+		return "", fmt.Errorf("get user cache directory: %w", err)
+	}
+	dir := filepath.Join(cacheDir, "golt")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return "", fmt.Errorf("create user state directory: %w", err)
+	}
+	return dir, nil
 }
 
 func writeRequestIdentity(path, identity string) error {
