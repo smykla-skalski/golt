@@ -126,17 +126,38 @@ Profiles are an attribution aid, not timing samples.
    If the cache cannot fit within GitHub's quota, Go documents
    [`GOCACHEPROG`](https://go.dev/cmd/go/) for an externally managed build
    cache; measure restore cost before adopting one.
-3. Investigate analyzer allocation and `unparam` SSA traversal with targeted
-   compatibility checks. `go/analysis` facts can flow between packages, so
-   skipping dependency analysis without a proven equivalent loses findings.
-4. Keep PGO as an experiment pending broader workloads. Prefer `GOGC=80` for
-   overlapping full Kuma analyses because it cut RSS by more than half; keep
-   the faster default for serial runs where memory is available. The current
-   data does not justify a Rust rewrite: the hot path is Go package loading,
-   type checking, and Go analyzers, which a Rust front end would still need
-   to call or replace.
-   See the Go-native [`go/packages`](https://pkg.go.dev/golang.org/x/tools/go/packages)
-   and [`go/analysis`](https://pkg.go.dev/golang.org/x/tools/go/analysis) APIs.
+3. Prototype finer invalidation for edited packages. Both issue and fact
+   caches currently use `HashModeNeedAllDeps`, which recursively hashes raw
+   source. The Kuma edit benchmark only appends a comment to
+   `api/system/v1alpha1/datasource_helpers.go`, but its edited run takes
+   about 40 seconds. Reanalyze the changed package, then invalidate importers
+   only when its exported type summary or relevant analyzer facts change.
+   Test comment-only, function-body, exported-API, build-tag, and module edits
+   against upstream diagnostics before treating any speedup as valid.
+4. Keep the measured GC trade-off visible: `GOGC=80` cut RSS by more than
+   half for overlapping full Kuma analyses; the default is faster for serial
+   runs with available memory. Park PGO pending broader workloads.
+
+## Rust rewrite status
+
+The [Rust supervisor](../../rust/README.md) already exists and passes CI on
+Linux and macOS. It is opt-in and owns timeout, cancellation, process-tree
+cleanup, and RSS enforcement. A versioned Rust/Go worker protocol and an
+opt-in transport also exist. Today that transport starts a fresh Go worker
+for each invocation; the Go CLI remains the default and still runs package
+loading, `go/types`, SSA, and all linters. It therefore does not remove the
+measured 40–80 seconds of edited or cold analysis.
+
+The [project roadmap](https://github.com/smykla-skalski/golt/issues/12)
+deliberately keeps Go semantic analysis in Go. Rewriting the supervisor or
+CLI front end more fully in Rust would leave the costly Go worker intact.
+A full semantic rewrite would have to replace Go-native
+[`go/packages`](https://pkg.go.dev/golang.org/x/tools/go/packages),
+[`go/analysis`](https://pkg.go.dev/golang.org/x/tools/go/analysis), type
+checking, facts, and the configured analyzers to preserve diagnostics.
+No benchmark shows a gain that justifies that compatibility effort. Use the
+existing Rust supervisor where its process controls help; put the next
+performance experiment into cache invalidation and package analysis.
 
 The [Go GC guide](https://go.dev/doc/gc-guide) describes the CPU and memory
 trade-off behind GOGC and GOMEMLIMIT. The
@@ -151,6 +172,7 @@ The [Go build cache](https://go.dev/cmd/go/) is already safe for concurrent
 `go` commands, so local workflows should share it. The
 [gopls scalability write-up](https://go.dev/blog/gopls-scalability) reports
 that persistent per-package summaries let separate processes reuse work;
-golt currently persists only `go list` metadata and analyzer results. A
-per-package type and analysis cache is the next architectural experiment,
-with a higher correctness and maintenance cost than GC or PGO tuning.
+golt already persists `go list` metadata, analyzer facts, and per-package
+issues. A persistent typed summary and finer dependency invalidation are the
+next architectural experiments, with a higher correctness and maintenance
+cost than GC or PGO tuning.
