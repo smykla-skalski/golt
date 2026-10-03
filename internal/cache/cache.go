@@ -230,7 +230,7 @@ func (c *Cache) exportDepsHash(pkg *packages.Package) (string, error) {
 		}
 		fmt.Fprintf(exportKey, "import %s %s\n", dep.PkgPath, hash)
 	}
-	curSum = exportKey.Sum()
+	curSum := exportKey.Sum()
 	return hex.EncodeToString(curSum[:]), nil
 }
 
