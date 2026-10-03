@@ -56,6 +56,8 @@ jobs:
   tests-on-windows:
     needs: golangci-lint # run after golangci-lint action to not produce duplicated errors
     runs-on: windows-latest
+    # golt ships no Windows build - a guard instead of a deletion keeps upstream syncs conflict-free.
+    if: github.repository != 'smykla-skalski/golt'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
