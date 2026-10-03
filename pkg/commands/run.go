@@ -629,6 +629,22 @@ func (c *runCommand) acquireFileLock() error {
 		}
 		ok, err = f.TryLockContext(ctx, retryDelay)
 	}
+	if err := c.fileLockWaitError(ctx, f, ok, err); err != nil {
+		return err
+	}
+
+	c.flock = f
+	if ctx.Err() != nil {
+		c.releaseFileLock()
+		if errors.Is(context.Cause(ctx), errRequestSuperseded) {
+			return errRequestSuperseded
+		}
+		return ctx.Err()
+	}
+	return nil
+}
+
+func (c *runCommand) fileLockWaitError(ctx context.Context, f *flock.Flock, ok bool, err error) error {
 	if errors.Is(context.Cause(ctx), errRequestSuperseded) {
 		if ok {
 			_ = f.Unlock()
@@ -645,15 +661,6 @@ func (c *runCommand) acquireFileLock() error {
 	if !ok {
 		if !c.cfg.Run.AllowSerialRunners {
 			return errors.New("parallel golangci-lint is running")
-		}
-		return ctx.Err()
-	}
-
-	c.flock = f
-	if ctx.Err() != nil {
-		c.releaseFileLock()
-		if errors.Is(context.Cause(ctx), errRequestSuperseded) {
-			return errRequestSuperseded
 		}
 		return ctx.Err()
 	}

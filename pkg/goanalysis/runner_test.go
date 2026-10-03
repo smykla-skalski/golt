@@ -59,10 +59,10 @@ func TestRunnerStopsAnalyzerDependentsAfterParentCancellation(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(t.Context())
 	t.Cleanup(cancel)
-	result := make(chan []error, 1)
+	completed := make(chan []error, 1)
 	go func() {
 		_, errs, _ := r.run(ctx, []*analysis.Analyzer{dependent}, pkgs, nil)
-		result <- errs
+		completed <- errs
 	}()
 
 	select {
@@ -73,7 +73,7 @@ func TestRunnerStopsAnalyzerDependentsAfterParentCancellation(t *testing.T) {
 	cancel()
 	unblock()
 	select {
-	case errs := <-result:
+	case errs := <-completed:
 		require.ErrorIs(t, errors.Join(errs...), context.Canceled)
 	case <-time.After(5 * time.Second):
 		t.Fatal("runner did not stop after cancellation")

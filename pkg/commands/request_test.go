@@ -3,6 +3,7 @@ package commands
 import (
 	"bytes"
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"sync"
@@ -86,7 +87,7 @@ func TestRequestKeySupersedesOlderRun(t *testing.T) {
 	t.Cleanup(second.stopRequest)
 
 	require.Eventually(t, func() bool {
-		return context.Cause(first.cmd.Context()) == errRequestSuperseded
+		return errors.Is(context.Cause(first.cmd.Context()), errRequestSuperseded)
 	}, time.Second, 10*time.Millisecond)
 	assert.NoError(t, second.cmd.Context().Err())
 }

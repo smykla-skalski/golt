@@ -17,6 +17,13 @@ import (
 
 var errRequestSuperseded = errors.New("request superseded by a newer run")
 
+const (
+	requestDirMode      = 0o700
+	requestFileMode     = 0o600
+	requestTokenSize    = 16
+	requestPollInterval = 100 * time.Millisecond
+)
+
 func (c *runCommand) beginRequest() error {
 	if c.requestKey == "" {
 		return nil
@@ -31,13 +38,13 @@ func (c *runCommand) beginRequest() error {
 		return err
 	}
 	dir := filepath.Join(stateDir, "requests")
-	if err := os.MkdirAll(dir, 0o700); err != nil {
+	if err := os.MkdirAll(dir, requestDirMode); err != nil {
 		return fmt.Errorf("create request directory: %w", err)
 	}
 
 	key := sha256.Sum256([]byte(wd + "\x00" + c.requestKey))
 	path := filepath.Join(dir, hex.EncodeToString(key[:]))
-	token := make([]byte, 16)
+	token := make([]byte, requestTokenSize)
 	if _, err := rand.Read(token); err != nil {
 		return fmt.Errorf("create request token: %w", err)
 	}
@@ -58,7 +65,7 @@ func (c *runCommand) beginRequest() error {
 	}
 
 	go func() {
-		ticker := time.NewTicker(100 * time.Millisecond)
+		ticker := time.NewTicker(requestPollInterval)
 		defer ticker.Stop()
 		for {
 			select {
@@ -87,28 +94,28 @@ func userStateDir() (string, error) {
 		return "", fmt.Errorf("get user cache directory: %w", err)
 	}
 	dir := filepath.Join(cacheDir, "golt")
-	if err := os.MkdirAll(dir, 0o700); err != nil {
+	if err := os.MkdirAll(dir, requestDirMode); err != nil {
 		return "", fmt.Errorf("create user state directory: %w", err)
 	}
 	return dir, nil
 }
 
-func writeRequestIdentity(path, identity string) error {
+func writeRequestIdentity(path, identity string) (err error) {
 	lock := flock.New(path)
 	if err := lock.Lock(); err != nil {
 		return fmt.Errorf("lock request: %w", err)
 	}
-	defer lock.Unlock()
+	defer func() { err = errors.Join(err, lock.Unlock()) }()
 
-	return os.WriteFile(path, []byte(identity), 0o600)
+	return os.WriteFile(path, []byte(identity), requestFileMode)
 }
 
-func readRequestIdentity(path string) (string, error) {
+func readRequestIdentity(path string) (identity string, err error) {
 	lock := flock.New(path)
 	if err := lock.Lock(); err != nil {
 		return "", fmt.Errorf("lock request: %w", err)
 	}
-	defer lock.Unlock()
+	defer func() { err = errors.Join(err, lock.Unlock()) }()
 
 	data, err := os.ReadFile(path)
 	return string(data), err
