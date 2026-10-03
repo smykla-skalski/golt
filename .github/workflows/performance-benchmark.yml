@@ -213,7 +213,7 @@ jobs:
         run: |
           set -o pipefail
           if [[ "$WORKLOAD" == "large" ]]; then
-            repetitions=2
+            repetitions=5
           else
             repetitions=3
           fi
