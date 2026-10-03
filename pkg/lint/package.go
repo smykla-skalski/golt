@@ -115,16 +115,22 @@ func (l *PackageLoader) loadWithListCache(ctx context.Context, conf *packages.Co
 
 	lc := newListCache(ctx, cacheRoot, conf, args)
 	if lc != nil {
-		if pkgs, ok := lc.load(); ok {
+		cacheStart := time.Now()
+		pkgs, status := lc.loadWithStatus()
+		l.debugf("Go list cache %s after %s", status, time.Since(cacheStart))
+		if status == "hit" {
 			l.debugf("Reused go list result %s", lc.key)
 
 			return pkgs, nil
 		}
+	} else {
+		l.debugf("Go list cache disabled")
 	}
 
 	loadStart := time.Now()
 
 	pkgs, err := packages.Load(conf, args...)
+	l.debugf("go/packages.Load took %s", time.Since(loadStart))
 	if err != nil {
 		return nil, err
 	}

@@ -3,6 +3,8 @@
 ## Developer workflow benchmark (CI only)
 
 Measured results: [developer workflow benchmark](local-workflow-results.md).
+The [full Kuma PR experiments](kuma-pr-experiments.md) use all 28 configured
+linters, test packages, and the exact PR revision on CI.
 
 Push branch `perf/local-workflow` to run the `Performance benchmark` workflow's
 `local-workflow` jobs. They build golt on GitHub Actions, clone pinned small

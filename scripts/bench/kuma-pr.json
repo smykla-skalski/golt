@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "go_version": "go1.27.1",
+  "concurrency": [4],
+  "runs": 3,
+  "workloads": [
+    {
+      "name": "kuma-pr",
+      "url": "https://github.com/kumahq/kuma.git",
+      "revision": "347bfd9022c6f9b074b0cd027e03233a429f32fd",
+      "config": ".golangci.yml",
+      "modules": ["."],
+      "tests": true,
+      "packages": ["./..."],
+      "profile_module": ".",
+      "edit": {
+        "file": "api/system/v1alpha1/datasource_helpers.go",
+        "append": "// golangci-bench edit {{N}}"
+      }
+    }
+  ],
+  "scenarios": [
+    {
+      "name": "configured",
+      "use_config": true
+    }
+  ]
+}

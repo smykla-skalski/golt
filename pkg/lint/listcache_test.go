@@ -296,3 +296,13 @@ func TestListCache_evict(t *testing.T) {
 	require.Len(t, entries, listCacheKeep)
 	assert.Equal(t, "03.gob", entries[0].Name())
 }
+
+func TestListCache_loadWithStatus(t *testing.T) {
+	lc := &listCache{dir: t.TempDir(), key: "status"}
+	_, status := lc.loadWithStatus()
+	assert.Equal(t, "missing", status)
+
+	require.NoError(t, os.WriteFile(lc.path(), []byte("invalid"), 0o600))
+	_, status = lc.loadWithStatus()
+	assert.Equal(t, "invalid-header", status)
+}

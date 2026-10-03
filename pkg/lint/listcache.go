@@ -157,9 +157,19 @@ func (c *listCache) path() string {
 
 // load returns the cached packages when every recorded stamp still matches.
 func (c *listCache) load() ([]*packages.Package, bool) {
+	pkgs, status := c.loadWithStatus()
+
+	return pkgs, status == "hit"
+}
+
+func (c *listCache) loadWithStatus() ([]*packages.Package, string) {
 	f, err := os.Open(c.path())
 	if err != nil {
-		return nil, false
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, "missing"
+		}
+
+		return nil, "read-error"
 	}
 	defer f.Close()
 
@@ -167,21 +177,21 @@ func (c *listCache) load() ([]*packages.Package, bool) {
 
 	var entry listCacheEntry
 	if err := dec.Decode(&entry.listCacheHeader); err != nil || entry.Schema != listCacheSchema {
-		return nil, false
+		return nil, "invalid-header"
 	}
 
 	if !entry.Snapshot.matches() {
-		return nil, false
+		return nil, "changed-input"
 	}
 
 	if err := dec.Decode(&entry.listCacheBody); err != nil {
-		return nil, false
+		return nil, "invalid-body"
 	}
 
 	now := time.Now()
 	_ = os.Chtimes(c.path(), now, now)
 
-	return c.decode(&entry), true
+	return c.decode(&entry), "hit"
 }
 
 // store saves pkgs loaded by a go list started at loadStart. It skips results

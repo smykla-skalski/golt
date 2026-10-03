@@ -463,6 +463,23 @@ func TestNewBenchmarkCommandAppliesLimits(t *testing.T) {
 	}
 }
 
+func TestNewBenchmarkCommandIsolatesGoBuildCache(t *testing.T) {
+	r := runner{
+		outDir: t.TempDir(),
+		goRoot: "/toolchain",
+		opts:   options{GoMaxProcs: 2, MaxRSSMiB: 2048, IsolateGoBuildCache: true},
+	}
+	for _, label := range []string{forkLabel, upstreamLabel} {
+		cmd := r.newBenchmarkCommand(
+			binary{Label: label, Path: "/bin/linter"}, "/work", "/cache", []string{"run"}, nil, io.Discard,
+		)
+		want := "GOCACHE=" + filepath.Join(r.outDir, "go-build", label)
+		if !slices.Contains(cmd.Env, want) {
+			t.Fatalf("expected %q in environment", want)
+		}
+	}
+}
+
 func TestDirectorySize(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "one"), []byte("123"), 0o600); err != nil {

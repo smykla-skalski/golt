@@ -1,5 +1,8 @@
 # Upstream golangci-lint versus golt
 
+For the full Kuma PR workload with all 28 linters and tests enabled, see
+[the full Kuma PR experiments](kuma-pr-experiments.md).
+
 **Compared:** [upstream v2.14.0](https://github.com/golangci/golangci-lint/releases/tag/v2.14.0)
 (`114493f9`) and golt `10a6fe80` for the original four rows; the cold Kuma row
 uses golt `58014932`. Both binaries were built from source with Go 1.26.0 and
