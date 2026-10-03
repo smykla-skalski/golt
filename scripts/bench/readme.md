@@ -2,6 +2,8 @@
 
 ## Developer workflow benchmark (CI only)
 
+Measured results: [developer workflow benchmark](local-workflow-results.md).
+
 Push branch `perf/local-workflow` to run the `Performance benchmark` workflow's
 `local-workflow` jobs. They build golt on GitHub Actions, clone pinned small
 and Kuma API workloads, seed the Go cache, and compare editor-like requests
