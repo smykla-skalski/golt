@@ -76,6 +76,7 @@ def start(binary, workdir, output, label, linters, concurrency, gc, daemon=False
         "started": time.monotonic(),
         "peak_rss": 0,
         "stdout_path": output / f"{label}.stdout",
+        "stderr_path": output / f"{label}.stderr",
     }
 
 
@@ -101,7 +102,7 @@ def finish(task, cancelled=False):
         digest = hashlib.sha256(json.dumps(diagnostics).encode()).hexdigest()
     except (ValueError, KeyError, TypeError):
         digest = None
-    return {
+    result = {
         "label": task["label"],
         "seconds": round(time.monotonic() - task["started"], 3),
         "peak_rss_bytes": task["peak_rss"],
@@ -110,6 +111,10 @@ def finish(task, cancelled=False):
         "diagnostic_sha256": digest,
         "stdout_sha256": hashlib.sha256(data).hexdigest(),
     }
+    if digest is None and not cancelled:
+        result["stdout_preview"] = repr(data[:300])
+        result["stderr_preview"] = repr(task["stderr_path"].read_bytes()[:300])
+    return result
 
 
 def run_batch(
