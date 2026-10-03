@@ -44,7 +44,21 @@ single-invocation samples per binary in both execution orders, and compares
 their JSON diagnostics. The run summary reports wall time, CPU time, peak
 process-tree RSS, and cache size; artifacts include raw samples and build
 metadata. For the usual developer path, use `small` with `cold,warm` and `large`
-with `edit` to measure a source change.
+with `edit` to measure a source change. Use `large` with `cold` to measure an
+empty analysis cache on the pinned Kuma API subset. “Cold” keeps the Go build
+and module caches warm; it does not reproduce a Kuma CI job with a missing Go
+build cache. The subset runs `./api/...`, disables tests, and enables only
+`govet`, `staticcheck`, and `unused`.
+
+For an upstream comparison of overlapping requests, dispatch the same workflow
+with `upstream_parallel=true` and `upstream_tag=v2.14.0`. It runs both binaries
+on the pinned small and Kuma API workloads. Each policy sends three requests:
+externally serialized or simultaneous with `--allow-parallel-runners`. The
+small workload has a warm analysis cache; Kuma receives the same unique source
+edit for both binaries before each paired run. Five repetitions alternate
+binary order, use isolated per-binary analysis caches, compare diagnostics,
+and report median batch makespan plus maximum aggregate process-tree RSS.
+Raw requests and build metadata are uploaded as CI artifacts.
 
 The script use [Hyperfine](https://github.com/sharkdp/hyperfine) to benchmark the command line of golangci-lint.
 
