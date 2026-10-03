@@ -51,6 +51,7 @@ func TestPrunedCacheMergesDiagnosticsAndWritesFullCache(t *testing.T) {
 		var counts [3]atomic.Int32
 		prunable := NewLinterFromAnalyzer(&analysis.Analyzer{
 			Name: "prunable",
+			Doc:  "Checks prunable diagnostics",
 			Run: func(pass *analysis.Pass) (any, error) {
 				counts[0].Add(1)
 				pass.Report(analysis.Diagnostic{Pos: pass.Files[0].Pos(), Message: "prunable issue"})
@@ -60,6 +61,7 @@ func TestPrunedCacheMergesDiagnosticsAndWritesFullCache(t *testing.T) {
 		var reported []*Issue
 		reporter := NewLinterFromAnalyzer(&analysis.Analyzer{
 			Name: "reporter",
+			Doc:  "Checks reporter diagnostics",
 			Run: func(pass *analysis.Pass) (any, error) {
 				counts[1].Add(1)
 				reported = append(reported, NewIssue(&result.Issue{
@@ -71,7 +73,7 @@ func TestPrunedCacheMergesDiagnosticsAndWritesFullCache(t *testing.T) {
 		}).WithIssuesReporter(func(*linter.Context) []*Issue { return reported }).
 			WithCacheableIssuesReporter().WithLoadMode(LoadModeSyntax)
 		factful := NewLinterFromAnalyzer(&analysis.Analyzer{
-			Name: "factful", FactTypes: []analysis.Fact{new(testPruningFact)},
+			Name: "factful", Doc: "Checks factful diagnostics", FactTypes: []analysis.Fact{new(testPruningFact)},
 			Run: func(pass *analysis.Pass) (any, error) {
 				if pass.Pkg.Path() == "example.com/pruning/user" {
 					counts[2].Add(1)
