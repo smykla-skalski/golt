@@ -75,6 +75,18 @@ on the edited run in a separate [CI experiment](https://github.com/smykla-skalsk
 using the default GC policy. That established that reporter-backed linters
 were the large remaining source of repeated work.
 
+The [final CI run](https://github.com/smykla-skalski/golt/actions/runs/37147882166)
+also measured three warm no-edit runs and repeated the edited case. The two
+orders again used separate runners and caches. The warm difference was
+0.01–0.04 seconds; the edited improvement held in both orders.
+
+| Order | Case | Merged main | Pruned candidate | Candidate change |
+| --- | --- | ---: | ---: | ---: |
+| Candidate first | Warm, no edit | 0.29 s | 0.33 s | +0.04 s |
+| Main first | Warm, no edit | 0.41 s | 0.42 s | +0.01 s |
+| Candidate first | Edited | 31.98 s | 16.76 s | 47.6% faster |
+| Main first | Edited | 42.59 s | 21.60 s | 49.3% faster |
+
 ## Isolating the list cache
 
 This compares the **same golt binary** with `GOLT_LIST_CACHE=0` versus the
