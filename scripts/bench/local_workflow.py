@@ -234,7 +234,8 @@ def main():
         cases = [
             case
             for case in cases
-            if case[0] in {"serial", "parallel", "bounded", "fork_gc", "daemon"}
+            if case[0]
+            in {"serial", "parallel", "bounded", "fork_gc", "daemon", "supersede"}
         ]
     timeout = 300 if args.profile == "large" else 90
     records = []
