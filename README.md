@@ -1,66 +1,41 @@
-<p align="center">
-  <img alt="golangci-lint logo" src="assets/go.png" height="150" />
-  <h3 align="center">golangci-lint</h3>
-  <p align="center">Fast linters runner for Go</p>
-</p>
+# golt
 
----
+golt is a fork of [golangci-lint](https://github.com/golangci/golangci-lint). It has the same CLI, linters and configuration as golangci-lint. It is faster on large Go projects.
 
-`golangci-lint` is a fast Go linters runner.
+## Differences
 
-It runs linters in parallel, uses caching, supports YAML configuration,
-integrates with all major IDEs, and includes over a hundred linters.
+- golt uses patched copies of `golang.org/x/tools`, `honnef.co/go/tools` and `revgrep`. The patches are in `forks/`.
+- golt sets the GC percent to 400. If `GOMEMLIMIT` is not set, golt sets it to half of the RAM. To use the Go defaults, set `GOLT_GC=default` or `GOGC`.
+- golt keeps a cache of `go list` results. To stop the cache, set `GOLT_LIST_CACHE=0`.
+- `GOLT_DEPS_FACTS=light` or `GOLT_DEPS_FACTS=project` makes cold runs faster. With these values, golt can miss some findings in code that calls dependencies.
+- `GOLT_DAEMON=1` keeps a background process for repeated `run` commands on Linux and macOS.
 
-## Install `golangci-lint`
+## Install
 
-- [On my machine](https://golangci-lint.run/docs/welcome/install/local);
-- [On CI/CD systems](https://golangci-lint.run/docs/welcome/install/ci).
+Download the release for your system. Releases are available for Linux and macOS, on amd64 and arm64.
 
-## Documentation
+```sh
+os=$(uname -s | tr '[:upper:]' '[:lower:]')
+arch=$(uname -m | sed 's/x86_64/amd64/; s/aarch64/arm64/')
+dir=$(mktemp -d)
+gh release download --repo smykla-skalski/golt --pattern "*-${os}-${arch}.tar.gz" --output - | tar -xzf - --strip-components=1 -C "${dir}"
+install "${dir}/golangci-lint" /usr/local/bin/
+```
 
-Documentation is hosted at https://golangci-lint.run.
+To build from source, use Go 1.26 or later and run `make build`.
 
-## Social Networks
+## Use
 
-[![Join Slack](https://img.shields.io/badge/Slack-4285F4?logo=slack&logoColor=white)](https://gophers.slack.com/archives/CS0TBRKPC)
-[![Follow on Mastodon](https://img.shields.io/badge/Mastodon-6364FF?logo=mastodon&logoColor=white)](https://fosstodon.org/@golangcilint)
-[![Follow on Bluesky](https://img.shields.io/badge/Bluesky-0a7aff?logo=bluesky&logoColor=white)](https://bsky.app/profile/golangci-lint.run)
-[![Follow on Twitter](https://img.shields.io/badge/Twitter-1DA1F2?logo=x&logoColor=white)](https://twitter.com/golangci)
+Use golt as you use golangci-lint. The binary name is `golangci-lint`. For the documentation, refer to [golangci-lint.run](https://golangci-lint.run).
 
-## Support Us
+## Release
 
-`golangci-lint` is a free and open-source project built by volunteers.
+A tag with the form `vX.Y.Z-golt.N` starts the `Fork release` workflow. This workflow attaches the Linux and macOS archives to a GitHub release.
 
-If you value it, consider supporting us, we appreciate it! :heart:
+## Upstream sync
 
-[![Golangci-lint](https://img.shields.io/badge/Support-golangci_lint-blue?style=for-the-badge)](https://donate.golangci.org)
-[![Linter Authors](https://img.shields.io/badge/Support-Linter_Authors-blue?style=for-the-badge)](https://golangci-lint.run/docs/product/thanks/)
+The `Sync upstream` workflow merges `golangci/golangci-lint` `main` into golt each day. To rebase the patched modules, refer to `forks/README.md`.
 
-## Badges
+## License
 
-![Build Status](https://github.com/golangci/golangci-lint/workflows/CI/badge.svg)
-[![License](https://img.shields.io/github/license/golangci/golangci-lint)](/LICENSE)
-[![Release](https://img.shields.io/github/release/golangci/golangci-lint.svg)](https://github.com/golangci/golangci-lint/releases/latest)
-[![Docker](https://img.shields.io/docker/pulls/golangci/golangci-lint)](https://hub.docker.com/r/golangci/golangci-lint)
-[![GitHub Releases Stats of golangci-lint](https://img.shields.io/github/downloads/golangci/golangci-lint/total.svg?logo=github)](https://somsubhra.github.io/github-release-stats/?username=golangci&repository=golangci-lint)
-
-## Contributors
-
-This project exists thanks to all the people who contribute. [How to contribute](https://golangci-lint.run/docs/contributing/).
-
-<a href="https://github.com/golangci/golangci-lint/graphs/contributors">
-  <img src="https://opencollective.com/golangci-lint/contributors.svg?width=890&button=false&skip=golangcidev,CLAassistant,renovate,fossabot,golangcibot,kortschak,golangci-releaser,dependabot%5Bbot%5D" />
-</a>
-
-## Sponsors
-
-<p>&nbsp;</p>
-<p float="left">
-  <a href="https://www.jetbrains.com/go/?utm_source=OSS&utm_medium=referral&utm_campaign=golangci" target="_blank">
-    <picture>
-      <source media="(prefers-color-scheme: dark)" srcset="assets/goland-white.svg">
-      <source media="(prefers-color-scheme: light)" srcset="assets/goland.svg">
-      <img alt="The complete IDE crafted for professional Go developers." src="assets/goland.svg" width="150" />
-    </picture>
-  </a>
-</p>
+GPL-3.0, the same as golangci-lint. Refer to `LICENSE`.
