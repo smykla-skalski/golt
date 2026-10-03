@@ -5063,7 +5063,7 @@ run:
 
   # Allow multiple golangci-lint instances running, but serialize them around a lock.
   # If false, golangci-lint exits with an error if it fails to acquire file lock on start.
-  # Default: false
+  # Default: true
   allow-serial-runners: true
 
   # Define the Go version limit.

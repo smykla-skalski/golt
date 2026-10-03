@@ -55,8 +55,8 @@ func setupRunFlagSet(v *viper.Viper, fs *pflag.FlagSet) {
 	internal.AddFlagAndBind(v, fs, fs.Bool, "allow-parallel-runners", "run.allow-parallel-runners", false,
 		color.GreenString(allowParallelDesc))
 	const allowSerialDesc = "Allow multiple golangci-lint instances running, but serialize them around a lock.\n" +
-		"If false (default) - golangci-lint exits with an error if it fails to acquire file lock on start."
-	internal.AddFlagAndBind(v, fs, fs.Bool, "allow-serial-runners", "run.allow-serial-runners", false, color.GreenString(allowSerialDesc))
+		"If false - golangci-lint exits with an error if it fails to acquire file lock on start."
+	internal.AddFlagAndBind(v, fs, fs.Bool, "allow-serial-runners", "run.allow-serial-runners", true, color.GreenString(allowSerialDesc))
 }
 
 func setupOutputFlagSet(v *viper.Viper, fs *pflag.FlagSet) {

@@ -102,7 +102,9 @@ type runCommand struct {
 	fileCache *fsutils.FileCache
 	lineCache *fsutils.LineCache
 
-	flock *flock.Flock
+	flock       *flock.Flock
+	requestKey  string
+	stopRequest func()
 
 	exitCode int
 	exitFn   func(int)
@@ -175,6 +177,7 @@ func newRunCommandWithOptions(logger logutils.Log, info BuildInfo, options runCo
 
 	setupLintersFlagSet(c.viper, fs)
 	setupRunFlagSet(c.viper, fs)
+	fs.StringVar(&c.requestKey, "request-key", "", color.GreenString("Cancel an older run with the same key in this directory"))
 	setupOutputFlagSet(c.viper, fs)
 	setupIssuesFlagSet(c.viper, fs)
 
@@ -193,6 +196,14 @@ func (c *runCommand) persistentPreRunE(cmd *cobra.Command, args []string) (retEr
 			}
 		}()
 	}
+	if err := c.beginRequest(); err != nil {
+		return err
+	}
+	defer func() {
+		if retErr != nil && c.stopRequest != nil {
+			c.stopRequest()
+		}
+	}()
 
 	if err := c.startTracing(); err != nil {
 		return err
@@ -228,6 +239,12 @@ func (c *runCommand) persistentPostRunE(_ *cobra.Command, _ []string) error {
 }
 
 func (c *runCommand) preRunE(_ *cobra.Command, args []string) (retErr error) {
+	defer func() {
+		if retErr != nil && c.stopRequest != nil {
+			c.stopRequest()
+		}
+	}()
+
 	if c.lifecycleRecorder != nil {
 		defer func() {
 			if retErr != nil {
@@ -277,8 +294,8 @@ func (c *runCommand) preRunE(_ *cobra.Command, args []string) (retErr error) {
 		return fmt.Errorf("failed to init hash salt: %w", err)
 	}
 
-	if ok := c.acquireFileLock(); !ok {
-		return errors.New("parallel golangci-lint is running")
+	if err := c.acquireFileLock(); err != nil {
+		return err
 	}
 
 	return nil
@@ -286,6 +303,9 @@ func (c *runCommand) preRunE(_ *cobra.Command, args []string) (retErr error) {
 
 func (c *runCommand) postRun(_ *cobra.Command, _ []string) {
 	c.releaseFileLock()
+	if c.stopRequest != nil {
+		c.stopRequest()
+	}
 }
 
 func (c *runCommand) execute(cmd *cobra.Command, _ []string) {
@@ -302,16 +322,24 @@ func (c *runCommand) execute(cmd *cobra.Command, _ []string) {
 	}()
 
 	ctx, cancel := context.WithCancel(cmd.Context())
-	if c.cfg.Run.Timeout > 0 {
-		ctx, cancel = context.WithTimeout(ctx, c.cfg.Run.Timeout)
-	}
 	defer cancel()
+	if c.cfg.Run.Timeout > 0 {
+		var stopTimeout context.CancelFunc
+		ctx, stopTimeout = context.WithTimeout(ctx, c.cfg.Run.Timeout)
+		defer stopTimeout()
+	}
 
 	if needTrackResources {
 		go watchResources(ctx, trackResourcesEndCh, c.log, c.debugf)
 	}
 
 	runErr := c.runAndPrint(ctx)
+	if errors.Is(context.Cause(ctx), errRequestSuperseded) {
+		c.log.Infof("Request superseded by a newer run")
+		c.exitCode = exitcodes.Failure
+		c.writeLifecycleReport(c.exitCode, errRequestSuperseded, ctx.Err())
+		return
+	}
 	if runErr != nil {
 		c.log.Errorf("Running error: %s", runErr)
 		if c.exitCode == exitcodes.Success {
@@ -542,9 +570,13 @@ func (c *runCommand) printStats(issues []*result.Issue) {
 }
 
 func (c *runCommand) setupExitCode(ctx context.Context) {
-	if ctx.Err() != nil {
+	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 		c.exitCode = exitcodes.Timeout
 		c.log.Errorf("Timeout exceeded: try increasing it by passing --timeout option")
+		return
+	}
+	if ctx.Err() != nil {
+		c.exitCode = exitcodes.Failure
 		return
 	}
 
@@ -565,43 +597,70 @@ func (c *runCommand) setupExitCode(ctx context.Context) {
 	}
 }
 
-func (c *runCommand) acquireFileLock() bool {
+func (c *runCommand) acquireFileLock() error {
 	if c.cfg.Run.AllowParallelRunners {
 		c.debugf("Parallel runners are allowed, no locking")
-		return true
+		return nil
 	}
 
 	lockFile := filepath.Join(os.TempDir(), "golangci-lint.lock")
 	c.debugf("Locking on file %s...", lockFile)
 	f := flock.New(lockFile)
-	const retryDelay = time.Second
+	const retryDelay = 250 * time.Millisecond
 
-	ctx := context.Background()
+	ctx := c.cmd.Context()
 	if !c.cfg.Run.AllowSerialRunners {
 		const totalTimeout = 5 * time.Second
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, totalTimeout)
 		defer cancel()
 	}
-	if ok, _ := f.TryLockContext(ctx, retryDelay); !ok {
-		return false
+	ok, err := f.TryLock()
+	if err != nil {
+		return fmt.Errorf("acquire run lock: %w", err)
+	}
+	if !ok {
+		if c.cfg.Run.AllowSerialRunners {
+			c.cmd.PrintErrln("Waiting for another golangci-lint run to finish...")
+		}
+		ok, err = f.TryLockContext(ctx, retryDelay)
+	}
+	if errors.Is(context.Cause(ctx), errRequestSuperseded) {
+		if ok {
+			_ = f.Unlock()
+		}
+		return errRequestSuperseded
+	}
+	if err != nil {
+		return fmt.Errorf("acquire run lock: %w", err)
+	}
+	if !ok {
+		if !c.cfg.Run.AllowSerialRunners {
+			return errors.New("parallel golangci-lint is running")
+		}
+		return ctx.Err()
 	}
 
 	c.flock = f
-	return true
+	if ctx.Err() != nil {
+		c.releaseFileLock()
+		if errors.Is(context.Cause(ctx), errRequestSuperseded) {
+			return errRequestSuperseded
+		}
+		return ctx.Err()
+	}
+	return nil
 }
 
 func (c *runCommand) releaseFileLock() {
-	if c.cfg.Run.AllowParallelRunners {
+	if c.flock == nil {
 		return
 	}
 
 	if err := c.flock.Unlock(); err != nil {
 		c.debugf("Failed to unlock on file: %s", err)
 	}
-	if err := os.Remove(c.flock.Path()); err != nil {
-		c.debugf("Failed to remove lock file: %s", err)
-	}
+	c.flock = nil
 }
 
 func watchResources(ctx context.Context, done chan struct{}, logger logutils.Log, debugf logutils.DebugFunc) {

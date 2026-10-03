@@ -21,14 +21,14 @@ func NewMetaLinter(linters []*Linter) *MetaLinter {
 	return ml
 }
 
-func (ml MetaLinter) Run(_ context.Context, lintCtx *linter.Context) ([]*result.Issue, error) {
+func (ml MetaLinter) Run(ctx context.Context, lintCtx *linter.Context) ([]*result.Issue, error) {
 	for _, l := range ml.linters {
 		if err := l.preRun(lintCtx); err != nil {
 			return nil, fmt.Errorf("failed to pre-run %s: %w", l.Name(), err)
 		}
 	}
 
-	return runAnalyzers(ml, lintCtx)
+	return runAnalyzers(ctx, ml, lintCtx)
 }
 
 func (MetaLinter) Name() string {

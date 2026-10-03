@@ -19,8 +19,9 @@ def main():
             request["cancelled"] for row in group for request in row["requests"]
         )
         message = f"median {wall:.2f}s (range {low:.2f}-{high:.2f}); max aggregate RSS {rss:.0f} MiB"
-        if name == "supersede":
-            message += f"; stale requests cancelled {cancelled}/{len(group)}"
+        if name in ("supersede", "native_supersede"):
+            expected = len(group) * (2 if name == "native_supersede" else 1)
+            message += f"; stale requests cancelled {cancelled}/{expected}"
         print(
             f"::warning file=scripts/bench/readme.md,title=local-workflow/{name}::{message}"
         )

@@ -36,7 +36,10 @@ def tree_rss(root):
     return sum(rss.get(pid, 0) for pid in descendants)
 
 
-def start(binary, workdir, output, label, linters, concurrency, gc, daemon=False):
+def start(
+    binary, workdir, output, label, linters, concurrency, gc, daemon=False,
+    runner_mode="parallel", request_key=None,
+):
     env = os.environ.copy()
     env.update(
         {
@@ -57,12 +60,15 @@ def start(binary, workdir, output, label, linters, concurrency, gc, daemon=False
         "--no-config",
         "--default=none",
         "--enable-only=" + ",".join(linters),
-        "--allow-parallel-runners",
         "--concurrency",
         str(concurrency),
         "--show-stats=false",
         "--output.json.path=stdout",
     ]
+    if runner_mode == "parallel":
+        args.append("--allow-parallel-runners")
+    if request_key:
+        args.append("--request-key=" + request_key)
     if os.environ.get("GOLT_WORKFLOW_TESTS") == "false":
         args.append("--tests=false")
     args.append(os.environ.get("GOLT_WORKFLOW_PACKAGES", "./..."))
@@ -131,6 +137,8 @@ def run_batch(
     gc,
     daemon=False,
     supersede=False,
+    runner_mode="parallel",
+    native_supersede=False,
     linter_groups=None,
     timeout=90,
 ):
@@ -140,8 +148,11 @@ def run_batch(
     started = time.monotonic()
     peak_total_rss = 0
     superseded = False
+    next_launch = started
     while pending or active:
         while pending and len(active) < slots:
+            if native_supersede and time.monotonic() < next_launch:
+                break
             index = pending.pop(0)
             active.append(
                 start(
@@ -155,8 +166,13 @@ def run_batch(
                     concurrency,
                     gc,
                     daemon,
+                    runner_mode,
+                    label if native_supersede else None,
                 )
             )
+            if native_supersede:
+                next_launch = time.monotonic() + 0.1
+                break
             if supersede and index == 0:
                 break
         if (
@@ -185,7 +201,9 @@ def run_batch(
                 active.remove(task)
                 results.append(
                     finish(
-                        task, supersede and superseded and task["label"].endswith("-0")
+                        task,
+                        (supersede and superseded and task["label"].endswith("-0"))
+                        or (native_supersede and task["process"].returncode == 3),
                     )
                 )
         if time.monotonic() - started > timeout:
@@ -223,13 +241,15 @@ def main():
     original_source = edit_path.read_bytes() if edit_path else None
     args.out.mkdir(parents=True, exist_ok=True)
     cases = [
-        ("serial", 1, 2, "default", False, False),
-        ("serial_gc", 1, 2, "fast", False, False),
-        ("parallel", 3, 2, "default", False, False),
-        ("bounded", 2, 1, "default", False, False),
-        ("fork_gc", 2, 1, "fast", False, False),
-        ("daemon", 1, 2, "default", True, False),
-        ("supersede", 1, 2, "default", False, True),
+        ("serial", 1, 2, "default", False, False, "parallel", False),
+        ("native_serial", 3, 2, "default", False, False, "serial", False),
+        ("serial_gc", 1, 2, "fast", False, False, "parallel", False),
+        ("parallel", 3, 2, "default", False, False, "parallel", False),
+        ("bounded", 2, 1, "default", False, False, "parallel", False),
+        ("fork_gc", 2, 1, "fast", False, False, "parallel", False),
+        ("daemon", 1, 2, "default", True, False, "parallel", False),
+        ("supersede", 1, 2, "default", False, True, "parallel", False),
+        ("native_supersede", 3, 2, "default", False, False, "serial", True),
     ]
     if args.profile == "large":
         cases = [
@@ -238,12 +258,14 @@ def main():
             if case[0]
             in {
                 "serial",
+                "native_serial",
                 "serial_gc",
                 "parallel",
                 "bounded",
                 "fork_gc",
                 "daemon",
                 "supersede",
+                "native_supersede",
             }
         ]
     timeout = 300 if args.profile == "large" else 90
@@ -258,7 +280,7 @@ def main():
         raise RuntimeError(f"warm-cache seed failed: {seed}")
     for repetition in range(args.repetitions):
         ordered = cases[repetition % len(cases) :] + cases[: repetition % len(cases)]
-        for name, slots, concurrency, gc, daemon, supersede in ordered:
+        for name, slots, concurrency, gc, daemon, supersede, runner_mode, native_supersede in ordered:
             label = f"{name}-r{repetition}"
             if edit_path:
                 edit_path.write_bytes(
@@ -275,11 +297,23 @@ def main():
                 gc,
                 daemon,
                 supersede,
+                runner_mode,
+                native_supersede,
                 timeout=timeout,
             )
             result["repetition"] = repetition
             records.append(result)
             print(json.dumps(result), flush=True)
+            if name == "native_serial" and not any(
+                b"Waiting for another golangci-lint run"
+                in (args.out / f"{label}-{index}.stderr").read_bytes()
+                for index in range(3)
+            ):
+                raise RuntimeError("native serial queue did not report progress")
+            if name == "native_supersede" and args.profile == "large" and not any(
+                request["cancelled"] for request in result["requests"]
+            ):
+                raise RuntimeError("native request key did not cancel an older run")
             for request in result["requests"]:
                 if not request["cancelled"] and (
                     request["exit_code"] not in (0, 1)

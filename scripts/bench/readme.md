@@ -12,12 +12,14 @@ under these policies:
 | Case | Policy tested |
 | --- | --- |
 | `serial` | One request at a time, two Go CPUs each. |
+| `native_serial` | Three simultaneous requests using golt's default lock queue. |
 | `serial_gc` | Serial with golt's GC policy. |
 | `parallel` | Three overlapping requests, two Go CPUs each. |
 | `bounded` | Two overlapping requests, one Go CPU each. |
 | `fork_gc` | Bounded overlap with golt's default GC policy. |
 | `daemon` | Serial requests through the existing warm daemon. |
 | `supersede` | Terminate a stale request before the next starts. |
+| `native_supersede` | Three overlapping requests using `--request-key` and the built-in lock queue. |
 | `split` | Run govet, staticcheck, and unused in separate processes. |
 
 The job records each request's wall time, exit code, normalized diagnostic hash,
@@ -27,8 +29,8 @@ on CI; local checks of the harness should be syntax and configuration checks.
 Each case also emits a GitHub Actions annotation with its median makespan and
 maximum aggregate RSS, readable through the public check-run annotations API.
 The bounded case simulates shared admission; it does not add admission to the
-product. The supersede case measures process cancellation, not analyzer context
-propagation. Daemon RSS excludes its detached server process. The larger Kuma
+product. The supersede case measures process cancellation; native supersede
+measures analyzer context cancellation. Daemon RSS excludes its detached server process. The larger Kuma
 case makes a unique source edit before each batch and covers serial, parallel,
 bounded, GC, daemon, and stale-request cancellation variants with five
 repetitions.
