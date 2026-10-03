@@ -97,7 +97,7 @@ func TestPrunedCacheMergesDiagnosticsAndWritesFullCache(t *testing.T) {
 				pass.ExportPackageFact(new(testPruningFact))
 				return nil, nil
 			},
-		}).WithLoadMode(LoadModeSyntax)
+		}).WithLoadMode(LoadModeTypesInfo)
 		logger := logutils.NewStderrLog("")
 		pkgCache, err := cache.NewCache(timeutils.NewStopwatch("cache", logger), logger)
 		require.NoError(t, err)

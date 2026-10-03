@@ -116,7 +116,7 @@ func TestPrunableAnalyzersExcludeFactsInRequirements(t *testing.T) {
 	assert.Equal(t, []*analysis.Analyzer{prunable}, reporter.WithCacheableIssuesReporter().getPrunableAnalyzers())
 }
 
-type testPruningFact struct{}
+type testPruningFact struct{ Value string }
 
 func (*testPruningFact) AFact() {}
 
