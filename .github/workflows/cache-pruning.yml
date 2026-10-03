@@ -10,7 +10,7 @@ permissions:
 
 concurrency:
   group: cache-pruning-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   build:
@@ -48,6 +48,7 @@ jobs:
 
   compare:
     needs: build
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     strategy:
@@ -98,3 +99,69 @@ jobs:
             !results/**/go-build/**
           if-no-files-found: error
           retention-days: 30
+
+  parity:
+    needs: build
+    if: github.event_name == 'push'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: 1.27.1
+          cache: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: cache-pruning-binaries
+          path: dist/bench/bin
+      - name: Check edited-run diagnostic parity
+        run: |
+          workload="$GITHUB_WORKSPACE/kuma"
+          git clone --filter=blob:none --no-checkout https://github.com/kumahq/kuma.git "$workload"
+          git -C "$workload" fetch --depth=1 origin 347bfd9022c6f9b074b0cd027e03233a429f32fd
+          git -C "$workload" checkout --detach 347bfd9022c6f9b074b0cd027e03233a429f32fd
+          scratch=$(mktemp -d)
+          source="$workload/api/system/v1alpha1/datasource_helpers.go"
+          cp "$source" "$scratch/original.go"
+          for binary in fork upstream; do
+            mkdir "$scratch/$binary-cache"
+            (cd "$workload" && \
+              GOLANGCI_LINT_CACHE="$scratch/$binary-cache" GOMAXPROCS=4 \
+              "$GITHUB_WORKSPACE/dist/bench/bin/$binary" run \
+              --concurrency=4 --timeout=20m --tests=true \
+              --issues-exit-code=0 --show-stats=false \
+              --max-same-issues=0 --max-issues-per-linter=0 \
+              --new=false --new-from-rev= --new-from-merge-base= --new-from-patch= \
+              --output.json.path="$scratch/$binary-seed.json" ./...)
+          done
+          printf '\n// golangci-bench edit parity\n' >> "$source"
+          for binary in fork upstream; do
+            (cd "$workload" && \
+              GOLANGCI_LINT_CACHE="$scratch/$binary-cache" GOMAXPROCS=4 \
+              "$GITHUB_WORKSPACE/dist/bench/bin/$binary" run \
+              --concurrency=4 --timeout=20m --tests=true \
+              --issues-exit-code=0 --show-stats=false \
+              --max-same-issues=0 --max-issues-per-linter=0 \
+              --new=false --new-from-rev= --new-from-merge-base= --new-from-patch= \
+              --output.json.path="$scratch/$binary-edit.json" ./...)
+          done
+          cp "$scratch/original.go" "$source"
+          python3 - "$scratch" <<'PY'
+          import json
+          import pathlib
+          import sys
+
+          root = pathlib.Path(sys.argv[1])
+          for stage in ('seed', 'edit'):
+              def issues(binary):
+                  data = json.loads((root / f'{binary}-{stage}.json').read_text())
+                  return sorted(json.dumps(issue, sort_keys=True) for issue in data.get('Issues') or [])
+              candidate = issues('fork')
+              baseline = issues('upstream')
+              print(f'{stage}: candidate={len(candidate)} main={len(baseline)}')
+              if candidate != baseline:
+                  raise SystemExit(f'{stage}: diagnostics differ')
+          PY
