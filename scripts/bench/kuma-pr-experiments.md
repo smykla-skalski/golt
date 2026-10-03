@@ -87,6 +87,19 @@ orders again used separate runners and caches. The warm difference was
 | Candidate first | Edited | 31.98 s | 16.76 s | 47.6% faster |
 | Main first | Edited | 42.59 s | 21.60 s | 49.3% faster |
 
+The [exact-head CI run](https://github.com/smykla-skalski/golt/actions/runs/37150451989)
+tested commit `d4f520f0` after the final code and lint fixes. It repeated
+three samples per case in both orders. The run's build, test, and full Kuma
+JSON diagnostic-parity jobs passed. Here `main` is merged golt main, not the
+upstream golangci-lint release.
+
+| Order | Case | Merged main | Pruned candidate | Candidate change | Main RSS | Candidate RSS |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| Main first | Warm, no edit | 0.277 s | 0.275 s | -0.002 s | 133 MiB | 134 MiB |
+| Candidate first | Warm, no edit | 0.411 s | 0.429 s | +0.018 s | 132 MiB | 131 MiB |
+| Main first | Edited | 28.12 s | 14.48 s | 48.5% faster | 2,507 MiB | 2,307 MiB |
+| Candidate first | Edited | 41.73 s | 20.91 s | 49.9% faster | 2,482 MiB | 2,240 MiB |
+
 ## Isolating the list cache
 
 This compares the **same golt binary** with `GOLT_LIST_CACHE=0` versus the
@@ -162,14 +175,12 @@ Profiles are an attribution aid, not timing samples.
    If the cache cannot fit within GitHub's quota, Go documents
    [`GOCACHEPROG`](https://go.dev/cmd/go/) for an externally managed build
    cache; measure restore cost before adopting one.
-3. Prototype finer invalidation for edited packages. Both issue and fact
-   caches currently use `HashModeNeedAllDeps`, which recursively hashes raw
-   source. The Kuma edit benchmark only appends a comment to
-   `api/system/v1alpha1/datasource_helpers.go`, but its edited run takes
-   about 40 seconds. Reanalyze the changed package, then invalidate importers
-   only when its exported type summary or relevant analyzer facts change.
-   Test comment-only, function-body, exported-API, build-tag, and module edits
-   against upstream diagnostics before treating any speedup as valid.
+3. The branch now prunes cached package-scoped, fact-free analysis when a
+   dependency edit leaves compiler export data unchanged. The pinned Kuma
+   comment-only edit is roughly twice as fast as merged golt main, with
+   matching JSON diagnostics. Factful analyzers still use full-dependency
+   hashes. Next, test function-body, build-tag, and module edits across more
+   projects before broadening pruning to analyzer facts.
 4. Keep the measured GC trade-off visible: `GOGC=80` cut RSS by more than
    half for overlapping full Kuma analyses; the default is faster for serial
    runs with available memory. Park PGO pending broader workloads.
@@ -192,8 +203,8 @@ A full semantic rewrite would have to replace Go-native
 [`go/analysis`](https://pkg.go.dev/golang.org/x/tools/go/analysis), type
 checking, facts, and the configured analyzers to preserve diagnostics.
 No benchmark shows a gain that justifies that compatibility effort. Use the
-existing Rust supervisor where its process controls help; put the next
-performance experiment into cache invalidation and package analysis.
+existing Rust supervisor where its process controls help; extend the measured
+Go cache pruning across more edit types and repositories.
 
 The [Go GC guide](https://go.dev/doc/gc-guide) describes the CPU and memory
 trade-off behind GOGC and GOMEMLIMIT. The
