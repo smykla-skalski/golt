@@ -56,15 +56,18 @@ func (c *runCommand) beginRequest() error {
 	ctx, cancel := context.WithCancelCause(c.cmd.Context())
 	c.cmd.SetContext(ctx)
 	stop := make(chan struct{})
+	done := make(chan struct{})
 	var once sync.Once
 	c.stopRequest = func() {
 		once.Do(func() {
 			close(stop)
 			cancel(nil)
 		})
+		<-done
 	}
 
 	go func() {
+		defer close(done)
 		ticker := time.NewTicker(requestPollInterval)
 		defer ticker.Stop()
 		for {
