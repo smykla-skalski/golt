@@ -3,8 +3,8 @@
 ## Developer workflow benchmark (CI only)
 
 Push branch `perf/local-workflow` to run the `Performance benchmark` workflow's
-`local-workflow` job. It builds golt on GitHub Actions, clones the pinned small
-workload, seeds the Go cache, and compares three repeated editor-like requests
+`local-workflow` jobs. They build golt on GitHub Actions, clone pinned small
+and Kuma API workloads, seed the Go cache, and compare editor-like requests
 under these policies:
 
 | Case | Policy tested |
@@ -25,7 +25,8 @@ Each case also emits a GitHub Actions annotation with its median makespan and
 maximum aggregate RSS, readable through the public check-run annotations API.
 The bounded case simulates shared admission; it does not add admission to the
 product. The supersede case measures process cancellation, not analyzer context
-propagation. Daemon RSS excludes its detached server process.
+propagation. Daemon RSS excludes its detached server process. The larger Kuma
+case covers serial, parallel, bounded, and GC variants with two repetitions.
 
 The script use [Hyperfine](https://github.com/sharkdp/hyperfine) to benchmark the command line of golangci-lint.
 

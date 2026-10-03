@@ -42,7 +42,7 @@ def start(binary, workdir, output, label, linters, concurrency, gc, daemon=False
         {
             "GOMAXPROCS": str(concurrency),
             "GOFLAGS": f"-p={concurrency}",
-            "GOMEMLIMIT": "512MiB",
+            "GOMEMLIMIT": os.environ.get("GOLT_WORKFLOW_MEMORY_LIMIT", "512MiB"),
             "GOLT_GC": gc,
         }
     )
@@ -62,8 +62,10 @@ def start(binary, workdir, output, label, linters, concurrency, gc, daemon=False
         str(concurrency),
         "--show-stats=false",
         "--output.json.path=stdout",
-        "./...",
     ]
+    if os.environ.get("GOLT_WORKFLOW_TESTS") == "false":
+        args.append("--tests=false")
+    args.append(os.environ.get("GOLT_WORKFLOW_PACKAGES", "./..."))
     stdout = (output / f"{label}.stdout").open("wb")
     stderr = (output / f"{label}.stderr").open("wb")
     process = subprocess.Popen(
@@ -207,6 +209,7 @@ def main():
     parser.add_argument("--workdir", type=Path, required=True)
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--repetitions", type=int, default=3)
+    parser.add_argument("--profile", choices=["small", "large"], default="small")
     args = parser.parse_args()
     if args.repetitions < 1:
         parser.error("--repetitions must be positive")
@@ -221,8 +224,17 @@ def main():
         ("daemon", 1, 2, "default", True, False),
         ("supersede", 1, 2, "default", False, True),
     ]
+    if args.profile == "large":
+        cases = [
+            case
+            for case in cases
+            if case[0] in {"serial", "parallel", "bounded", "fork_gc"}
+        ]
+    timeout = 300 if args.profile == "large" else 90
     records = []
-    seed = run_batch(binary, workdir, args.out, "seed", 1, 1, 2, "default")
+    seed = run_batch(
+        binary, workdir, args.out, "seed", 1, 1, 2, "default", timeout=timeout
+    )
     if any(
         request["exit_code"] not in (0, 1) or request["diagnostic_sha256"] is None
         for request in seed["requests"]
@@ -243,6 +255,7 @@ def main():
                 gc,
                 daemon,
                 supersede,
+                timeout=timeout,
             )
             result["repetition"] = repetition
             records.append(result)
@@ -253,26 +266,28 @@ def main():
                     or request["diagnostic_sha256"] is None
                 ):
                     raise RuntimeError(f"linter request failed: {request}")
-        split = run_batch(
-            binary,
-            workdir,
-            args.out,
-            f"split-r{repetition}",
-            3,
-            3,
-            1,
-            "default",
-            linter_groups=[["govet"], ["staticcheck"], ["unused"]],
-        )
-        split["repetition"] = repetition
-        records.append(split)
-        print(json.dumps(split), flush=True)
-        for request in split["requests"]:
-            if (
-                request["exit_code"] not in (0, 1)
-                or request["diagnostic_sha256"] is None
-            ):
-                raise RuntimeError(f"split linter request failed: {request}")
+        if args.profile == "small":
+            split = run_batch(
+                binary,
+                workdir,
+                args.out,
+                f"split-r{repetition}",
+                3,
+                3,
+                1,
+                "default",
+                linter_groups=[["govet"], ["staticcheck"], ["unused"]],
+                timeout=timeout,
+            )
+            split["repetition"] = repetition
+            records.append(split)
+            print(json.dumps(split), flush=True)
+            for request in split["requests"]:
+                if (
+                    request["exit_code"] not in (0, 1)
+                    or request["diagnostic_sha256"] is None
+                ):
+                    raise RuntimeError(f"split linter request failed: {request}")
     expected = seed["requests"][0]["diagnostic_sha256"]
     for row in records:
         if row["case"].startswith("split-"):
@@ -280,21 +295,27 @@ def main():
         for request in row["requests"]:
             if not request["cancelled"] and request["diagnostic_sha256"] != expected:
                 raise RuntimeError(f"diagnostics changed in {row['case']}: {request}")
-    expected_diagnostics = diagnostics_from_file(args.out / "seed-0.stdout")
-    for repetition in range(args.repetitions):
-        combined = []
-        for index in range(3):
-            combined.extend(
-                diagnostics_from_file(args.out / f"split-r{repetition}-{index}.stdout")
-            )
-        if sorted(combined) != expected_diagnostics:
-            raise RuntimeError(
-                f"split linters changed diagnostics in repetition {repetition}"
-            )
+    if args.profile == "small":
+        expected_diagnostics = diagnostics_from_file(args.out / "seed-0.stdout")
+        for repetition in range(args.repetitions):
+            combined = []
+            for index in range(3):
+                combined.extend(
+                    diagnostics_from_file(
+                        args.out / f"split-r{repetition}-{index}.stdout"
+                    )
+                )
+            if sorted(combined) != expected_diagnostics:
+                raise RuntimeError(
+                    f"split linters changed diagnostics in repetition {repetition}"
+                )
     (args.out / "results.json").write_text(json.dumps(records, indent=2) + "\n")
     print("\n| Case | Median makespan (s) | Max peak RSS (MiB) |")
     print("| --- | ---: | ---: |")
-    for name in [row[0] for row in cases] + ["split"]:
+    names = [row[0] for row in cases]
+    if args.profile == "small":
+        names.append("split")
+    for name in names:
         group = [row for row in records if row["case"].startswith(name + "-")]
         wall = statistics.median(row["makespan_seconds"] for row in group)
         rss = max(row["peak_total_rss_bytes"] for row in group) / 1048576
