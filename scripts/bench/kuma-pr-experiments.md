@@ -4,7 +4,8 @@ These benchmarks run in GitHub Actions only. They use the exact
 [Kuma PR #18941](https://github.com/kumahq/kuma/pull/18941) head
 (`347bfd9022c6f9b074b0cd027e03233a429f32fd`), `./...`, tests enabled,
 its `.golangci.yml` with 28 linters, Go 1.27.1, four Go CPUs, and separate
-per-binary analysis and Go build caches. The runner is Ubuntu 24.04.
+per-binary analysis and Go build caches. Timing runs set `GOGC=80` and
+`GOMEMLIMIT=6144MiB` for both binaries. The runner is Ubuntu 24.04.
 Upstream is golangci-lint v2.14.0; golt is built from this branch. The
 [CI run](https://github.com/smykla-skalski/golt/actions/runs/37133788173)
 contains the raw JSONL samples and logs.
@@ -27,12 +28,28 @@ before configuration filtering and zero afterwards in the cold-analysis runs.
 | Upstream first | Edited | 83.21 s | 43.64 s | 47.6% faster | 6,095 MiB | 2,473 MiB |
 | Golt first | Edited | 82.83 s | 40.38 s | 51.2% faster | 6,126 MiB | 2,527 MiB |
 
-The first CI run also measured cold Go build caches, but it did not prewarm
-the shared Go module cache before the first binary. Those paired single
-samples are directionally useful, not a clean build-cache comparison:
-upstream-first was 415.64 s upstream and 389.00 s golt; golt-first was
-566.17 s golt and 633.72 s upstream. A follow-up CI run prewarms only the
-module cache before repeating both orders.
+The follow-up CI run repeated the warm-Go comparison in both orders:
+cold-analysis medians were 153.47–154.88 s upstream versus 79.29–82.30 s
+golt; edited medians were 78.22–85.96 s versus 40.90–41.04 s; warm no-edit
+medians were 4.56–5.01 s versus 0.38–0.40 s. The effect persisted.
+
+The [follow-up CI run](https://github.com/smykla-skalski/golt/actions/runs/37137467998)
+prewarmed the shared Go module cache, then gave each binary a separate empty
+Go build and analysis cache. These are single samples per binary and order:
+
+| Order | Upstream | Golt | Golt change | Upstream RSS | Golt RSS |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Upstream first | 621.57 s | 554.21 s | 10.8% faster | 6,154 MiB | 3,632 MiB |
+| Golt first | 656.79 s | 558.85 s | 14.9% faster | 6,163 MiB | 3,493 MiB |
+
+The first CI run did not prewarm the shared module cache before its cold-Go
+samples, so it is not included in this table. The second run still shows
+substantial between-run wall-time variation. On the warm-Go case, package
+loading fell to roughly four seconds; on the upstream-first cold-Go case,
+package loading took 7m51s upstream and 7m53s golt, while analyzer time was
+2m30s versus 1m21s. Dependency builds dominated total time. The value of
+restoring the Go build cache is larger than the
+remaining golt-versus-upstream difference on this cache-miss workload.
 
 ## Isolating the list cache
 
@@ -66,6 +83,28 @@ upstream golangci-lint release.
 This single profile and workload support further PGO testing, but not a
 default release build. The cold-analysis memory cost is about 8%.
 
+## GC policy for heavy concurrent work
+
+The [follow-up CI run](https://github.com/smykla-skalski/golt/actions/runs/37137467998)
+compared the same golt binary with its default policy (`GOGC=400` and its
+automatic half-physical-memory soft limit) against Kuma's `GOGC=80` and the
+benchmark's `GOMEMLIMIT=6144MiB`. Each row is a median of three cold-analysis
+samples after warming the Go build cache; the two orders used separate
+isolated caches. This tests the combined policies, not GOGC alone.
+
+| Order | Golt default | `GOGC=80` | Default wall change | Default RSS | `GOGC=80` RSS |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Default first | 58.12 s | 80.49 s | 27.8% faster | 7,596 MiB | 3,541 MiB |
+| `GOGC=80` first | 62.04 s | 81.61 s | 24.0% faster | 7,669 MiB | 3,276 MiB |
+
+The default saves about 20 seconds on one cold full-repository run but uses
+more than twice the memory. For multiple heavy linter processes on one
+developer machine, set `GOGC=80` and an appropriate `GOMEMLIMIT`, or use
+golt's default serial queue. The 6 GiB soft limit used here is a measurement
+setting, not a recommended value for every machine. The Go runtime's
+[GC guide](https://go.dev/doc/gc-guide) cautions that an aggressive memory
+limit can slow a CLI with variable inputs.
+
 ## Profile and likely next work
 
 The unprofiled cold-analysis run with warm Go build cache took 84.5 s; its
@@ -84,16 +123,20 @@ Profiles are an attribution aid, not timing samples.
    [documented default repository limit is 10 GB](https://docs.github.com/en/actions/reference/workflows-and-actions/dependency-caching).
    Eviction is a plausible cause, but historical cache inventory is absent.
    Check the configured limit and cache restore rate before changing Kuma CI.
+   If the cache cannot fit within GitHub's quota, Go documents
+   [`GOCACHEPROG`](https://go.dev/cmd/go/) for an externally managed build
+   cache; measure restore cost before adopting one.
 3. Investigate analyzer allocation and `unparam` SSA traversal with targeted
    compatibility checks. `go/analysis` facts can flow between packages, so
    skipping dependency analysis without a proven equivalent loses findings.
-4. Keep PGO or GC tuning only if their paired CI experiments improve the
-   useful latency versus memory trade-off on this workload. In particular,
-   golt's automatic half-physical-RAM `GOMEMLIMIT` is worth checking: the Go
-   GC guide cautions against baking a memory limit into a CLI with variable
-   inputs. The current data does not justify
-   a Rust rewrite: the hot path is Go package loading, type checking, and
-   Go analyzers, which a Rust front end would still need to call or replace.
+4. Keep PGO as an experiment pending broader workloads. Prefer `GOGC=80` for
+   overlapping full Kuma analyses because it cut RSS by more than half; keep
+   the faster default for serial runs where memory is available. The current
+   data does not justify a Rust rewrite: the hot path is Go package loading,
+   type checking, and Go analyzers, which a Rust front end would still need
+   to call or replace.
+   See the Go-native [`go/packages`](https://pkg.go.dev/golang.org/x/tools/go/packages)
+   and [`go/analysis`](https://pkg.go.dev/golang.org/x/tools/go/analysis) APIs.
 
 The [Go GC guide](https://go.dev/doc/gc-guide) describes the CPU and memory
 trade-off behind GOGC and GOMEMLIMIT. The
@@ -103,3 +146,11 @@ shows a more ambitious route for edited-workspace performance: persistent
 package metadata and granular invalidation. That design would be a larger
 project than this list cache and needs correctness tests across edits, build
 tags, generated files, and modules.
+
+The [Go build cache](https://go.dev/cmd/go/) is already safe for concurrent
+`go` commands, so local workflows should share it. The
+[gopls scalability write-up](https://go.dev/blog/gopls-scalability) reports
+that persistent per-package summaries let separate processes reuse work;
+golt currently persists only `go list` metadata and analyzer results. A
+per-package type and analysis cache is the next architectural experiment,
+with a higher correctness and maintenance cost than GC or PGO tuning.
