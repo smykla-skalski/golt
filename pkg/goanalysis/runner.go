@@ -129,9 +129,15 @@ func (r *runner) run(ctx context.Context, analyzers []*analysis.Analyzer, initia
 	statsReady func(*analysisStats),
 ) ([]*Diagnostic, []error, map[*analysis.Pass]*packages.Package,
 ) {
+	return r.runSelected(ctx, analyzers, initialPackages, statsReady, nil)
+}
+
+func (r *runner) runSelected(ctx context.Context, analyzers []*analysis.Analyzer, initialPackages []*packages.Package,
+	statsReady func(*analysisStats), skipRoot func(*analysis.Analyzer, *packages.Package) bool,
+) ([]*Diagnostic, []error, map[*analysis.Pass]*packages.Package) {
 	debugf("Analyzing %d packages on load mode %s", len(initialPackages), r.loadMode)
 
-	roots, stats := r.analyze(ctx, initialPackages, analyzers)
+	roots, stats := r.analyzeSelected(ctx, initialPackages, analyzers, skipRoot)
 	if statsReady != nil {
 		statsReady(&stats)
 	}
@@ -233,7 +239,7 @@ func (r *runner) buildActionFactDeps(act *action, a *analysis.Analyzer, pkg *pac
 }
 
 func (r *runner) prepareAnalysis(pkgs []*packages.Package,
-	analyzers []*analysis.Analyzer,
+	analyzers []*analysis.Analyzer, skipRoot func(*analysis.Analyzer, *packages.Package) bool,
 ) (initialPkgs map[*packages.Package]bool, allActions, roots []*action) {
 	// Construct the action graph.
 
@@ -246,6 +252,9 @@ func (r *runner) prepareAnalysis(pkgs []*packages.Package,
 	markedActions := make(map[actKey]struct{}, len(analyzers)*len(pkgs))
 	for _, a := range analyzers {
 		for _, pkg := range pkgs {
+			if skipRoot != nil && skipRoot(a, pkg) {
+				continue
+			}
 			r.markAllActions(a, pkg, markedActions)
 		}
 	}
@@ -263,6 +272,9 @@ func (r *runner) prepareAnalysis(pkgs []*packages.Package,
 	roots = make([]*action, 0, len(pkgs)*len(analyzers))
 	for _, a := range analyzers {
 		for _, pkg := range pkgs {
+			if skipRoot != nil && skipRoot(a, pkg) {
+				continue
+			}
 			root := r.makeAction(a, pkg, initialPkgs, actions, actAlloc)
 			root.IsRoot = true
 			roots = append(roots, root)
@@ -277,7 +289,13 @@ func (r *runner) prepareAnalysis(pkgs []*packages.Package,
 }
 
 func (r *runner) analyze(ctx context.Context, pkgs []*packages.Package, analyzers []*analysis.Analyzer) ([]*action, analysisStats) {
-	initialPkgs, actions, rootActions := r.prepareAnalysis(pkgs, analyzers)
+	return r.analyzeSelected(ctx, pkgs, analyzers, nil)
+}
+
+func (r *runner) analyzeSelected(ctx context.Context, pkgs []*packages.Package, analyzers []*analysis.Analyzer,
+	skipRoot func(*analysis.Analyzer, *packages.Package) bool,
+) ([]*action, analysisStats) {
+	initialPkgs, actions, rootActions := r.prepareAnalysis(pkgs, analyzers, skipRoot)
 	var scheduler schedulerStats
 	if r.scheduler != nil {
 		scheduler = collectSchedulerGraphStats(actions, rootActions)

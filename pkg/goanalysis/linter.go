@@ -66,6 +66,34 @@ func (lnt *Linter) getLinterNames() []string {
 	return []string{lnt.name}
 }
 
+func (lnt *Linter) getPrunableAnalyzers() []*analysis.Analyzer {
+	if lnt.issuesReporter != nil || lnt.loadMode == LoadModeWholeProgram || lnt.needUseOriginalPackages {
+		return nil
+	}
+	for _, analyzer := range lnt.analyzers {
+		if analyzerNeedsFacts(analyzer, map[*analysis.Analyzer]bool{}) {
+			return nil
+		}
+	}
+	return lnt.analyzers
+}
+
+func analyzerNeedsFacts(analyzer *analysis.Analyzer, seen map[*analysis.Analyzer]bool) bool {
+	if len(analyzer.FactTypes) != 0 {
+		return true
+	}
+	if seen[analyzer] {
+		return false
+	}
+	seen[analyzer] = true
+	for _, required := range analyzer.Requires {
+		if analyzerNeedsFacts(required, seen) {
+			return true
+		}
+	}
+	return false
+}
+
 func (lnt *Linter) getLinterNameForAnalyzer(analyzer *analysis.Analyzer) string {
 	for _, candidate := range lnt.analyzers {
 		if candidate == analyzer {

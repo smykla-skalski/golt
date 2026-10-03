@@ -81,6 +81,40 @@ func TestRunnerStopsAnalyzerDependentsAfterParentCancellation(t *testing.T) {
 	assert.False(t, dependentRan.Load())
 }
 
+func TestPrepareAnalysisSkipsCachedRoots(t *testing.T) {
+	first := &packages.Package{PkgPath: "example.com/first"}
+	second := &packages.Package{PkgPath: "example.com/second"}
+	required := &analysis.Analyzer{Name: "required"}
+	prunable := &analysis.Analyzer{Name: "prunable", Requires: []*analysis.Analyzer{required}}
+	factful := &analysis.Analyzer{Name: "factful"}
+	r := &runner{}
+
+	_, actions, roots := r.prepareAnalysis([]*packages.Package{first, second},
+		[]*analysis.Analyzer{prunable, factful}, func(a *analysis.Analyzer, pkg *packages.Package) bool {
+			return a == prunable && pkg == first
+		})
+
+	require.Len(t, roots, 3)
+	require.Len(t, actions, 4)
+	for _, root := range roots {
+		assert.False(t, root.Analyzer == prunable && root.Package == first)
+	}
+}
+
+func TestPrunableAnalyzersExcludeFactsInRequirements(t *testing.T) {
+	factful := &analysis.Analyzer{Name: "factful", FactTypes: []analysis.Fact{new(testPruningFact)}}
+	prunable := &analysis.Analyzer{Name: "prunable"}
+	needsFact := &analysis.Analyzer{Name: "needsFact", Requires: []*analysis.Analyzer{factful}}
+
+	assert.Equal(t, []*analysis.Analyzer{prunable},
+		NewLinter("prunable", "", []*analysis.Analyzer{prunable}, nil).getPrunableAnalyzers())
+	assert.Empty(t, NewLinter("factful", "", []*analysis.Analyzer{needsFact}, nil).getPrunableAnalyzers())
+}
+
+type testPruningFact struct{}
+
+func (*testPruningFact) AFact() {}
+
 func TestCollectAnalyzerStats(t *testing.T) {
 	alpha := &analysis.Analyzer{Name: "alpha"}
 	zeta := &analysis.Analyzer{Name: "zeta"}

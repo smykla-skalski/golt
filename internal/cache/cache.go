@@ -6,12 +6,15 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"maps"
+	"os"
 	"runtime"
 	"slices"
 	"strings"
 	"sync"
 
+	"golang.org/x/tools/go/gcexportdata"
 	"golang.org/x/tools/go/packages"
 
 	"github.com/golangci/golangci-lint/v2/internal/go/cache"
@@ -25,6 +28,7 @@ const (
 	HashModeNeedOnlySelf HashMode = iota
 	HashModeNeedDirectDeps
 	HashModeNeedAllDeps
+	HashModeNeedExportDeps
 )
 
 var ErrMissing = errors.New("missing data")
@@ -37,6 +41,7 @@ type hashResults map[HashMode]string
 type Cache struct {
 	lowLevelCache cache.Cache
 	pkgHashes     sync.Map
+	exportHashes  sync.Map
 	sw            *timeutils.Stopwatch
 	log           logutils.Log
 	ioSem         chan struct{} // semaphore limiting parallel IO
@@ -128,6 +133,9 @@ func (c *Cache) pkgActionID(pkg *packages.Package, mode HashMode) (cache.ActionI
 }
 
 func (c *Cache) packageHash(pkg *packages.Package, mode HashMode) (string, error) {
+	if mode == HashModeNeedExportDeps {
+		return c.exportDepsHash(pkg)
+	}
 	results, found := c.pkgHashes.Load(pkg)
 	if found {
 		hashRes := results.(hashResults)
@@ -192,6 +200,67 @@ func (c *Cache) computePkgHash(pkg *packages.Package) (hashResults, error) {
 	hashRes[HashModeNeedAllDeps] = hex.EncodeToString(curSum[:])
 
 	return hashRes, nil
+}
+
+func (c *Cache) exportDepsHash(pkg *packages.Package) (string, error) {
+	if results, ok := c.pkgHashes.Load(pkg); ok {
+		if hash, ok := results.(hashResults)[HashModeNeedExportDeps]; ok {
+			return hash, nil
+		}
+	}
+	selfHash, err := c.packageHash(pkg, HashModeNeedOnlySelf)
+	if err != nil {
+		return "", err
+	}
+	exportKey, err := newPackageHash(pkg, "export dependency hash")
+	if err != nil {
+		return "", err
+	}
+	fmt.Fprintf(exportKey, "self %s\n", selfHash)
+	imps := slices.SortedFunc(maps.Values(pkg.Imports), func(a, b *packages.Package) int {
+		return strings.Compare(a.PkgPath, b.PkgPath)
+	})
+	for _, dep := range imps {
+		if dep.PkgPath == "unsafe" {
+			continue
+		}
+		hash, err := c.exportHash(dep)
+		if err != nil {
+			return c.packageHash(pkg, HashModeNeedAllDeps)
+		}
+		fmt.Fprintf(exportKey, "import %s %s\n", dep.PkgPath, hash)
+	}
+	curSum = exportKey.Sum()
+	return hex.EncodeToString(curSum[:]), nil
+}
+
+func (c *Cache) exportHash(pkg *packages.Package) (string, error) {
+	if hash, ok := c.exportHashes.Load(pkg); ok {
+		return hash.(string), nil
+	}
+	if pkg.ExportFile == "" {
+		return "", errors.New("missing export file")
+	}
+	f, err := os.Open(pkg.ExportFile)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	r, err := gcexportdata.NewReader(f)
+	if err != nil {
+		return "", err
+	}
+	key, err := newPackageHash(pkg, "export data")
+	if err != nil {
+		return "", err
+	}
+	if _, err := io.Copy(key, r); err != nil {
+		return "", err
+	}
+	sum := key.Sum()
+	hash := hex.EncodeToString(sum[:])
+	c.exportHashes.Store(pkg, hash)
+	return hash, nil
 }
 
 // hashSources writes the identity of the package's own sources.

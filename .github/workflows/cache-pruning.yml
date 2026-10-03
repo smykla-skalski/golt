@@ -1,0 +1,100 @@
+name: Cache pruning experiment
+
+on:
+  push:
+    branches: [perf/cache-pruning]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cache-pruning-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    if: github.repository == 'smykla-skalski/golt'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: 1.27.1
+          cache: false
+      - name: Test cache and analyzer scheduling
+        run: go test ./internal/cache ./pkg/goanalysis ./scripts/bench/baseline
+      - name: Build main and candidate
+        run: |
+          go run ./scripts/bench/build_pair \
+            --candidate-ref HEAD \
+            --upstream-ref origin/main \
+            --baseline-mode exact \
+            --out-dir dist/bench/bin \
+            --build-timeout 15m \
+            --max-memory-mib 4096 \
+            --go-max-procs 4 \
+            --nice 10
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cache-pruning-binaries
+          path: dist/bench/bin
+          if-no-files-found: error
+          retention-days: 1
+
+  compare:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        order: [fork-first, upstream-first]
+    name: Kuma edit (${{ matrix.order }})
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: 1.27.1
+          cache: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: cache-pruning-binaries
+          path: dist/bench/bin
+      - name: Compare pinned Kuma PR workflow
+        run: |
+          chmod +x dist/bench/bin/fork dist/bench/bin/upstream
+          go run ./scripts/bench/baseline \
+            --manifest scripts/bench/kuma-pr.json \
+            --fork-bin dist/bench/bin/fork \
+            --upstream-bin dist/bench/bin/upstream \
+            --binary-order '${{ matrix.order }}' \
+            --out 'results/${{ matrix.order }}' \
+            --workload kuma-pr \
+            --scenario configured \
+            --concurrency 4 \
+            --cache-mode cold,warm,edit \
+            --runs 3 \
+            --prepare=true \
+            --isolate-go-build-cache \
+            --run-timeout 20m \
+            --max-rss-mib 8192 \
+            --go-max-procs 4 \
+            --nice 10
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: cache-pruning-${{ matrix.order }}
+          path: |
+            results
+            !results/**/workloads/**
+            !results/**/cache/**
+            !results/**/go-build/**
+          if-no-files-found: error
+          retention-days: 30

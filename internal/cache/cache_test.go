@@ -143,6 +143,17 @@ func TestCache_packageHash_store(t *testing.T) {
 	assert.Equal(t, "9c602ef861197b6807e82c99caa7c4042eb03c1a92886303fb02893744355131", hashRes[HashModeNeedAllDeps])
 }
 
+func TestCache_exportDepsHash_fallsBackWithoutExportFile(t *testing.T) {
+	pkgCache := setupCache(t)
+	pkg := fakePackage()
+
+	fullHash, err := pkgCache.packageHash(pkg, HashModeNeedAllDeps)
+	require.NoError(t, err)
+	exportHash, err := pkgCache.packageHash(pkg, HashModeNeedExportDeps)
+	require.NoError(t, err)
+	assert.Equal(t, fullHash, exportHash)
+}
+
 func TestCache_computeHash(t *testing.T) {
 	pkgCache := setupCache(t)
 

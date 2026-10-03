@@ -19,6 +19,13 @@ import (
 func saveIssuesToCache(allPkgs []*packages.Package, pkgsFromCache map[*packages.Package]bool,
 	issues []*result.Issue, lintCtx *linter.Context, analyzers []*analysis.Analyzer,
 ) {
+	saveIssuesToCacheWithMode(allPkgs, pkgsFromCache, issues, lintCtx,
+		cache.HashModeNeedAllDeps, getIssuesCacheKey(analyzers), true)
+}
+
+func saveIssuesToCacheWithMode(allPkgs []*packages.Package, pkgsFromCache map[*packages.Package]bool,
+	issues []*result.Issue, lintCtx *linter.Context, mode cache.HashMode, lintResKey string, closeCache bool,
+) {
 	startedAt := time.Now()
 	perPkgIssues := map[*packages.Package][]*result.Issue{}
 	for _, issue := range issues {
@@ -26,7 +33,6 @@ func saveIssuesToCache(allPkgs []*packages.Package, pkgsFromCache map[*packages.
 	}
 
 	var savedIssuesCount int64
-	lintResKey := getIssuesCacheKey(analyzers)
 
 	workerCount := runtime.GOMAXPROCS(-1)
 	var wg sync.WaitGroup
@@ -51,7 +57,7 @@ func saveIssuesToCache(allPkgs []*packages.Package, pkgsFromCache map[*packages.
 				}
 
 				atomic.AddInt64(&savedIssuesCount, int64(len(encodedIssues)))
-				if err := lintCtx.PkgCache.Put(pkg, cache.HashModeNeedAllDeps, lintResKey, encodedIssues); err != nil {
+				if err := lintCtx.PkgCache.Put(pkg, mode, lintResKey, encodedIssues); err != nil {
 					lintCtx.Log.Infof("Failed to save package %s issues (%d) to cache: %s", pkg, len(pkgIssues), err)
 				} else {
 					issuesCacheDebugf("Saved package %s issues (%d) to cache", pkg, len(pkgIssues))
@@ -70,7 +76,9 @@ func saveIssuesToCache(allPkgs []*packages.Package, pkgsFromCache map[*packages.
 	close(pkgCh)
 	wg.Wait()
 
-	lintCtx.PkgCache.Close()
+	if closeCache {
+		lintCtx.PkgCache.Close()
+	}
 
 	issuesCacheDebugf("Saved %d issues from %d packages to cache in %s", savedIssuesCount, len(allPkgs), time.Since(startedAt))
 }
@@ -78,9 +86,13 @@ func saveIssuesToCache(allPkgs []*packages.Package, pkgsFromCache map[*packages.
 func loadIssuesFromCache(pkgs []*packages.Package, lintCtx *linter.Context,
 	analyzers []*analysis.Analyzer,
 ) (issuesFromCache []*result.Issue, pkgsFromCache map[*packages.Package]bool) {
-	startedAt := time.Now()
+	return loadIssuesFromCacheWithMode(pkgs, lintCtx, cache.HashModeNeedAllDeps, getIssuesCacheKey(analyzers))
+}
 
-	lintResKey := getIssuesCacheKey(analyzers)
+func loadIssuesFromCacheWithMode(pkgs []*packages.Package, lintCtx *linter.Context,
+	mode cache.HashMode, lintResKey string,
+) (issuesFromCache []*result.Issue, pkgsFromCache map[*packages.Package]bool) {
+	startedAt := time.Now()
 	type cacheRes struct {
 		issues  []*result.Issue
 		loadErr error
@@ -98,7 +110,7 @@ func loadIssuesFromCache(pkgs []*packages.Package, lintCtx *linter.Context,
 		wg.Go(func() {
 			for pkg := range pkgCh {
 				var pkgIssues []*EncodingIssue
-				err := lintCtx.PkgCache.Get(pkg, cache.HashModeNeedAllDeps, lintResKey, &pkgIssues)
+				err := lintCtx.PkgCache.Get(pkg, mode, lintResKey, &pkgIssues)
 				cacheRes := pkgToCacheRes[pkg]
 				cacheRes.loadErr = err
 				if err != nil {
@@ -148,6 +160,10 @@ func loadIssuesFromCache(pkgs []*packages.Package, lintCtx *linter.Context,
 	issuesCacheDebugf("Loaded %d issues from cache in %s, analyzing %d/%d packages",
 		loadedIssuesCount, time.Since(startedAt), len(pkgs)-len(pkgsFromCache), len(pkgs))
 	return issuesFromCache, pkgsFromCache
+}
+
+func getPrunableIssuesCacheKey(analyzers []*analysis.Analyzer) string {
+	return "lint/pruned-result-v1:" + analyzersHashID(analyzers)
 }
 
 func getIssuesCacheKey(analyzers []*analysis.Analyzer) string {
