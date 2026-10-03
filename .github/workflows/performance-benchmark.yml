@@ -192,6 +192,7 @@ jobs:
 
       - name: Benchmark editor requests
         run: |
+          set -o pipefail
           python3 scripts/bench/local_workflow.py \
             --binary dist/bench/golangci-lint \
             --workdir dist/bench/workload \

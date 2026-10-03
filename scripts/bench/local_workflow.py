@@ -296,4 +296,11 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as exc:
+        print(
+            f"::error file=scripts/bench/local_workflow.py::benchmark failed: {type(exc).__name__}: {exc}",
+            flush=True,
+        )
+        raise
