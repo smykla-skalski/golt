@@ -104,7 +104,7 @@ func NewReader(r io.Reader) (io.Reader, error) {
 	}, nil
 }
 
-// ReadCompilerExportData extracts unified export data from a compiler archive.
+// ReadCompilerExportData excludes archive build IDs from dependency hashes.
 func ReadCompilerExportData(r io.Reader) ([]byte, error) {
 	return gcimporter.ReadUnified(bufio.NewReader(r))
 }
