@@ -3,8 +3,11 @@
 **Compared:** [upstream v2.14.0](https://github.com/golangci/golangci-lint/releases/tag/v2.14.0)
 (`114493f9`) and golt `10a6fe80` for the original four rows; the cold Kuma row
 uses golt `58014932`. Both binaries were built from source with Go 1.26.0 and
-tested on Ubuntu 24.04. These are ordinary single-process runs of
-`govet`, `staticcheck`, and `unused`; no concurrent linter requests are included.
+tested on Ubuntu 24.04. The first table uses ordinary single-process runs of
+`govet`, `staticcheck`, and `unused`. A separate table below measures overlapping
+requests.
+
+## Single invocation
 
 Each row has seven samples per binary in each of two execution orders (14 per
 binary). The table reports median wall time and median peak process-tree RSS.
@@ -36,6 +39,32 @@ This compares complete products at pinned commits. It does not attribute the
 gain to a single fork change. Results cover one small repository and the
 81-file Kuma API subset under two Go CPUs and a 1 GiB per-process RSS limit;
 they do not predict performance on every codebase.
+
+## Three-request developer workflow
+
+[CI comparison](https://github.com/smykla-skalski/golt/actions/runs/37129315267):
+upstream v2.14.0 versus golt `580682a3`, both built with Go 1.26.0 on Ubuntu
+24.04. Each batch sends three requests for `govet`, `staticcheck`, and `unused`.
+Serial batches launch one request at a time; parallel batches launch all three
+with `--allow-parallel-runners`. Each process gets two Go CPUs. The small
+workload has a warm no-edit cache; the Kuma API subset gets a unique source
+edit before each paired batch. Each row has five batches per binary, with
+alternating binary order and separate analysis caches. Completed diagnostics
+matched across binaries.
+
+| Workload | Policy | Upstream median batch | Golt median batch | Wall change | Upstream peak aggregate RSS | Golt peak aggregate RSS |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| cache-buster, warm | Serial | 1.317 s | 0.558 s | **57.6% faster** | 127 MiB | 71 MiB |
+| cache-buster, warm | Parallel | 0.777 s | 0.286 s | **63.2% faster** | 380 MiB | 217 MiB |
+| Kuma API, edited | Serial | 1.923 s | 1.294 s | **32.7% faster** | 354 MiB | 330 MiB |
+| Kuma API, edited | Parallel | 2.326 s | 1.726 s | **25.8% faster** | 1011 MiB | 931 MiB |
+
+The RSS columns give the highest sampled aggregate process-tree RSS across
+five batches; they are not per-process medians like the first table. For the
+edited Kuma API subset, parallel requests increased golt's median batch time
+from 1.294 to 1.726 seconds and peak aggregate RSS from 330 to 931 MiB.
+The small warm workload benefited from overlap. These results still use the
+Kuma API subset, not the full Kuma repository.
 
 ## Scope check against Kuma CI
 

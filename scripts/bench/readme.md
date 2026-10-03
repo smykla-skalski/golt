@@ -37,6 +37,8 @@ repetitions.
 
 ## Upstream comparison (CI only)
 
+Measured results: [upstream versus golt](upstream-vs-golt-results.md).
+
 Dispatch `Performance benchmark` with `local_workflow=false`,
 `upstream_tag=v2.14.0`, and the desired workload and cache mode. The hosted job
 fetches that official release, builds both binaries with Go 1.26, runs seven
