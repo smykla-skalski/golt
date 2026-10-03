@@ -97,6 +97,15 @@ jobs:
           ORDER: ${{ matrix.order }}
         run: |
           chmod +x dist/bench/bin/fork dist/bench/bin/upstream
+          if [[ "$CASE_NAME" == cold-go ]]; then
+            seed_dir=$(mktemp -d)
+            git -C "$seed_dir" init -q
+            git -C "$seed_dir" remote add origin https://github.com/kumahq/kuma.git
+            git -C "$seed_dir" fetch --depth=1 origin 347bfd9022c6f9b074b0cd027e03233a429f32fd
+            git -C "$seed_dir" checkout -q --detach FETCH_HEAD
+            (cd "$seed_dir" && go mod download)
+            rm -rf "$seed_dir"
+          fi
           go run ./scripts/bench/baseline \
             --manifest scripts/bench/kuma-pr.json \
             --fork-bin dist/bench/bin/fork \
@@ -127,6 +136,7 @@ jobs:
           retention-days: 30
 
   profile:
+    if: github.event_name == 'workflow_dispatch'
     needs: build
     runs-on: ubuntu-24.04
     timeout-minutes: 120
@@ -180,6 +190,7 @@ jobs:
           retention-days: 30
 
   list_cache:
+    if: github.event_name == 'workflow_dispatch'
     needs: build
     runs-on: ubuntu-24.04
     timeout-minutes: 120
@@ -253,6 +264,7 @@ jobs:
           retention-days: 30
 
   pgo:
+    if: github.event_name == 'workflow_dispatch'
     needs: [build, profile]
     runs-on: ubuntu-24.04
     timeout-minutes: 150
@@ -314,6 +326,61 @@ jobs:
             !results/pgo/workloads/**
             !results/pgo/cache/**
             !results/pgo/go-build/**
+          if-no-files-found: error
+          retention-days: 30
+
+  gc_policy:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: 1.27.1
+          cache: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: kuma-pr-binaries
+          path: dist/bench/bin
+      - name: Compare Kuma GOGC with golt default
+        run: |
+          chmod +x dist/bench/bin/fork
+          printf '#!/bin/sh\nexec env -u GOGC -u GOMEMLIMIT "%s" "$@"\n' \
+            "$PWD/dist/bench/bin/fork" > dist/bench/bin/fork-default-gc
+          chmod +x dist/bench/bin/fork-default-gc
+          for order in fork-first upstream-first; do
+            go run ./scripts/bench/baseline \
+              --manifest scripts/bench/kuma-pr.json \
+              --fork-bin dist/bench/bin/fork-default-gc \
+              --upstream-bin dist/bench/bin/fork \
+              --binary-order "$order" \
+              --out "results/gc/$order" \
+              --workload kuma-pr \
+              --scenario configured \
+              --concurrency 4 \
+              --cache-mode cold \
+              --runs 3 \
+              --prepare=true \
+              --isolate-go-build-cache \
+              --run-timeout 20m \
+              --max-rss-mib 8192 \
+              --go-max-procs 4 \
+              --nice 10
+          done
+          echo 'Fork = golt default GC; upstream = the same golt binary with Kuma GOGC=80.' >> "$GITHUB_STEP_SUMMARY"
+          go run ./scripts/bench/summary -max-wall-regression 1000 results/gc >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: kuma-pr-gc-policy
+          path: |
+            results/gc
+            !results/gc/**/workloads/**
+            !results/gc/**/cache/**
+            !results/gc/**/go-build/**
           if-no-files-found: error
           retention-days: 30
 
