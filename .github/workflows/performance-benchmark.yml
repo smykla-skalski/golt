@@ -175,6 +175,7 @@ jobs:
       GOLT_WORKFLOW_PACKAGES: ${{ matrix.workload == 'large' && './api/...' || './...' }}
       GOLT_WORKFLOW_TESTS: ${{ matrix.workload == 'large' && 'false' || 'true' }}
       GOLT_WORKFLOW_MEMORY_LIMIT: ${{ matrix.workload == 'large' && '768MiB' || '512MiB' }}
+      GOLT_WORKFLOW_EDIT_FILE: ${{ matrix.workload == 'large' && 'api/system/v1alpha1/datasource_helpers.go' || '' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

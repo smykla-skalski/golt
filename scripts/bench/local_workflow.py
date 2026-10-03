@@ -215,6 +215,12 @@ def main():
         parser.error("--repetitions must be positive")
     binary = args.binary.resolve()
     workdir = args.workdir.resolve()
+    edit_path = (
+        workdir / os.environ["GOLT_WORKFLOW_EDIT_FILE"]
+        if args.profile == "large"
+        else None
+    )
+    original_source = edit_path.read_bytes() if edit_path else None
     args.out.mkdir(parents=True, exist_ok=True)
     cases = [
         ("serial", 1, 2, "default", False, False),
@@ -244,6 +250,10 @@ def main():
         ordered = cases[repetition % len(cases) :] + cases[: repetition % len(cases)]
         for name, slots, concurrency, gc, daemon, supersede in ordered:
             label = f"{name}-r{repetition}"
+            if edit_path:
+                edit_path.write_bytes(
+                    original_source + f"\n// golt CI edit {label}\n".encode()
+                )
             result = run_batch(
                 binary,
                 workdir,
