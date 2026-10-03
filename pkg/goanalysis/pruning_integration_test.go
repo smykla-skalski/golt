@@ -57,7 +57,7 @@ func TestPrunedCacheMergesDiagnosticsAndWritesFullCache(t *testing.T) {
 	assert.Equal(t, [3]int32{1, 1, 1}, counts)
 }
 
-func runPruningFixture(t *testing.T, dir string) ([]string, [3]int32) {
+func runPruningFixture(t *testing.T, dir string) (issueTexts []string, executions [3]int32) {
 	t.Helper()
 	pkgs, err := packages.Load(&packages.Config{
 		Dir: dir,
