@@ -1,8 +1,16 @@
 name: Performance benchmark
 
 on:
+  push:
+    branches:
+      - perf/local-workflow
   workflow_dispatch:
     inputs:
+      local_workflow:
+        description: Benchmark simultaneous developer requests
+        required: true
+        default: false
+        type: boolean
       candidate_ref:
         description: Candidate git ref
         required: true
@@ -59,7 +67,7 @@ concurrency:
 
 jobs:
   benchmark:
-    if: github.repository == 'smykla-skalski/golt'
+    if: github.repository == 'smykla-skalski/golt' && github.event_name == 'workflow_dispatch' && !inputs.local_workflow
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     env:
@@ -152,4 +160,51 @@ jobs:
             !dist/bench/hosted/**/workloads/**
             !dist/bench/hosted/**/cache/**
           if-no-files-found: error
+          retention-days: 14
+
+  local-workflow:
+    if: github.repository == 'smykla-skalski/golt' && (github.event_name == 'push' || inputs.local_workflow)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: 1.26.0
+          cache: false
+
+      - name: Build linter
+        env:
+          GOMAXPROCS: '2'
+          GOMEMLIMIT: 1024MiB
+          GOFLAGS: -p=2
+        run: |
+          mkdir -p dist/bench
+          go build -o dist/bench/golangci-lint ./cmd/golangci-lint
+
+      - name: Prepare pinned workload
+        run: |
+          git clone --filter=blob:none https://github.com/Automaat/cache-buster.git dist/bench/workload
+          git -C dist/bench/workload checkout --detach 1ed2641a75cb424a592fa3eddf76da32180e7ed4
+
+      - name: Benchmark editor requests
+        run: |
+          python3 scripts/bench/local_workflow.py \
+            --binary dist/bench/golangci-lint \
+            --workdir dist/bench/workload \
+            --out dist/bench/local-workflow | tee dist/bench/local-workflow-summary.md
+          cat dist/bench/local-workflow-summary.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: local-workflow-benchmark
+          path: |
+            dist/bench/local-workflow
+            dist/bench/local-workflow-summary.md
+          if-no-files-found: warn
           retention-days: 14

@@ -1,5 +1,30 @@
 # Benchmarks
 
+## Developer workflow benchmark (CI only)
+
+Push branch `perf/local-workflow` to run the `Performance benchmark` workflow's
+`local-workflow` job. It builds golt on GitHub Actions, clones the pinned small
+workload, seeds the Go cache, and compares three repeated editor-like requests
+under these policies:
+
+| Case | Policy tested |
+| --- | --- |
+| `serial` | One request at a time, two Go CPUs each. |
+| `parallel` | Three overlapping requests, two Go CPUs each. |
+| `bounded` | Two overlapping requests, one Go CPU each. |
+| `fork_gc` | Bounded overlap with golt's default GC policy. |
+| `daemon` | Serial requests through the existing warm daemon. |
+| `supersede` | Terminate a stale request before the next starts. |
+| `split` | Run govet, staticcheck, and unused in separate processes. |
+
+The job records each request's wall time, exit code, normalized diagnostic hash,
+process-tree peak RSS, batch makespan, and aggregate peak RSS. It rejects changed
+diagnostics and enforces a 3 GiB aggregate RSS ceiling. All linter workloads run
+on CI; local checks of the harness should be syntax and configuration checks.
+The bounded case simulates shared admission; it does not add admission to the
+product. The supersede case measures process cancellation, not analyzer context
+propagation. Daemon RSS excludes its detached server process.
+
 The script use [Hyperfine](https://github.com/sharkdp/hyperfine) to benchmark the command line of golangci-lint.
 
 ## Reproducible baseline
