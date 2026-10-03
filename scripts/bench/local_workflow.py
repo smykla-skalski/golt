@@ -38,7 +38,7 @@ def tree_rss(root):
 
 def start(
     binary, workdir, output, label, linters, concurrency, gc, daemon=False,
-    runner_mode="parallel", request_key=None,
+    runner_mode="parallel", request_key=None, cache_dir=None,
 ):
     env = os.environ.copy()
     env.update(
@@ -49,6 +49,8 @@ def start(
             "GOLT_GC": gc,
         }
     )
+    if cache_dir is not None:
+        env["GOLANGCI_LINT_CACHE"] = str(cache_dir)
     if daemon:
         env["GOLT_DAEMON"] = "1"
         env["GOLT_DAEMON_IDLE"] = "20s"
@@ -141,6 +143,7 @@ def run_batch(
     native_supersede=False,
     linter_groups=None,
     timeout=90,
+    cache_dir=None,
 ):
     pending = list(range(requests))
     active = []
@@ -168,6 +171,7 @@ def run_batch(
                     daemon,
                     runner_mode,
                     label if native_supersede else None,
+                    cache_dir,
                 )
             )
             if native_supersede:
