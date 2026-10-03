@@ -21,6 +21,11 @@ on:
         required: true
         default: HEAD^
         type: string
+      upstream_tag:
+        description: Official upstream release tag (overrides baseline_ref)
+        required: false
+        default: ''
+        type: string
       workload:
         description: Workload
         required: true
@@ -76,6 +81,7 @@ jobs:
       GOFLAGS: -p=2
       CANDIDATE_REF: ${{ inputs.candidate_ref }}
       BASELINE_REF: ${{ inputs.baseline_ref }}
+      UPSTREAM_TAG: ${{ inputs.upstream_tag }}
       WORKLOAD: ${{ inputs.workload }}
       SCENARIO: ${{ inputs.scenario }}
       CACHE_MODE: ${{ inputs.cache_mode }}
@@ -91,11 +97,23 @@ jobs:
           go-version: 1.26.0
           cache: false
 
+      - name: Resolve baseline
+        run: |
+          if [[ -n "$UPSTREAM_TAG" ]]; then
+            git fetch --no-tags https://github.com/golangci/golangci-lint.git \
+              "refs/tags/${UPSTREAM_TAG}:refs/tags/benchmark-upstream"
+            echo "BENCH_BASELINE_REF=refs/tags/benchmark-upstream" >> "$GITHUB_ENV"
+            echo "BENCH_BASELINE_LABEL=$UPSTREAM_TAG" >> "$GITHUB_ENV"
+          else
+            echo "BENCH_BASELINE_REF=$BASELINE_REF" >> "$GITHUB_ENV"
+            echo "BENCH_BASELINE_LABEL=$BASELINE_REF" >> "$GITHUB_ENV"
+          fi
+
       - name: Build candidate and baseline
         run: |
           go run ./scripts/bench/build_pair \
             --candidate-ref "$CANDIDATE_REF" \
-            --upstream-ref "$BASELINE_REF" \
+            --upstream-ref "$BENCH_BASELINE_REF" \
             --baseline-mode exact \
             --out-dir dist/bench/bin \
             --build-timeout 5m \
@@ -138,13 +156,29 @@ jobs:
             --out dist/bench/hosted/baseline-first \
             "${common_args[@]}"
 
+      - name: Compare diagnostics
+        run: |
+          go run ./scripts/bench/baseline \
+            --manifest scripts/bench/baseline.json \
+            --fork-bin dist/bench/bin/fork \
+            --upstream-bin dist/bench/bin/upstream \
+            --out dist/bench/hosted/compatibility \
+            --workload "$WORKLOAD" \
+            --scenario "$SCENARIO" \
+            --concurrency 2 \
+            --compatibility \
+            --run-timeout 2m \
+            --max-rss-mib 1024 \
+            --go-max-procs 2 \
+            --nice 10
+
       - name: Summarize results
         if: always()
         run: |
           {
             echo "## ${WORKLOAD} / ${SCENARIO} (${CACHE_MODE})"
             echo
-            echo "Candidate \`${CANDIDATE_REF}\` vs baseline \`${BASELINE_REF}\`."
+            echo "Candidate \`${CANDIDATE_REF}\` vs baseline \`${BENCH_BASELINE_LABEL}\`."
             echo
             go run ./scripts/bench/summary dist/bench/hosted
           } >> "$GITHUB_STEP_SUMMARY"

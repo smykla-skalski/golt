@@ -35,6 +35,17 @@ case makes a unique source edit before each batch and covers serial, parallel,
 bounded, GC, daemon, and stale-request cancellation variants with five
 repetitions.
 
+## Upstream comparison (CI only)
+
+Dispatch `Performance benchmark` with `local_workflow=false`,
+`upstream_tag=v2.14.0`, and the desired workload and cache mode. The hosted job
+fetches that official release, builds both binaries with Go 1.26, runs seven
+single-invocation samples per binary in both execution orders, and compares
+their JSON diagnostics. The run summary reports wall time, CPU time, peak
+process-tree RSS, and cache size; artifacts include raw samples and build
+metadata. For the usual developer path, use `small` with `cold,warm` and `large`
+with `edit` to measure a source change.
+
 The script use [Hyperfine](https://github.com/sharkdp/hyperfine) to benchmark the command line of golangci-lint.
 
 ## Reproducible baseline
