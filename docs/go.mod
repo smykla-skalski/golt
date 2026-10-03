@@ -1,5 +1,5 @@
 module github.com/golangci/docs
 
-go 1.24.0
+go 1.27.1
 
 require github.com/imfing/hextra v0.12.1 // indirect
