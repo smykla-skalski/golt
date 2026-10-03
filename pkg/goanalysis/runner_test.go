@@ -109,6 +109,10 @@ func TestPrunableAnalyzersExcludeFactsInRequirements(t *testing.T) {
 	assert.Equal(t, []*analysis.Analyzer{prunable},
 		NewLinter("prunable", "", []*analysis.Analyzer{prunable}, nil).getPrunableAnalyzers())
 	assert.Empty(t, NewLinter("factful", "", []*analysis.Analyzer{needsFact}, nil).getPrunableAnalyzers())
+	reporter := NewLinter("reported", "", []*analysis.Analyzer{prunable}, nil).
+		WithIssuesReporter(func(*linter.Context) []*Issue { return nil })
+	assert.Empty(t, reporter.getPrunableAnalyzers())
+	assert.Equal(t, []*analysis.Analyzer{prunable}, reporter.WithCacheableIssuesReporter().getPrunableAnalyzers())
 }
 
 type testPruningFact struct{}

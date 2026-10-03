@@ -41,6 +41,7 @@ type Linter struct {
 	analyzers               []*analysis.Analyzer
 	cfg                     map[string]map[string]any
 	issuesReporter          func(*linter.Context) []*Issue
+	cacheableIssuesReporter bool
 	contextSetter           func(*linter.Context)
 	loadMode                LoadMode
 	needUseOriginalPackages bool
@@ -67,7 +68,8 @@ func (lnt *Linter) getLinterNames() []string {
 }
 
 func (lnt *Linter) getPrunableAnalyzers() []*analysis.Analyzer {
-	if lnt.issuesReporter != nil || lnt.loadMode == LoadModeWholeProgram || lnt.needUseOriginalPackages {
+	if (lnt.issuesReporter != nil && !lnt.cacheableIssuesReporter) ||
+		lnt.loadMode == LoadModeWholeProgram || lnt.needUseOriginalPackages {
 		return nil
 	}
 	for _, analyzer := range lnt.analyzers {
@@ -156,6 +158,12 @@ func (lnt *Linter) WithLoadMode(loadMode LoadMode) *Linter {
 
 func (lnt *Linter) WithIssuesReporter(r func(*linter.Context) []*Issue) *Linter {
 	lnt.issuesReporter = r
+	return lnt
+}
+
+// WithCacheableIssuesReporter marks a reporter whose issues depend only on each analyzed package.
+func (lnt *Linter) WithCacheableIssuesReporter() *Linter {
+	lnt.cacheableIssuesReporter = true
 	return lnt
 }
 

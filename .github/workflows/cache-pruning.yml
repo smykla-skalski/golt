@@ -8,6 +8,9 @@ on:
 permissions:
   contents: read
 
+env:
+  GOGC: '80'
+
 concurrency:
   group: cache-pruning-${{ github.ref }}
   cancel-in-progress: false
@@ -48,7 +51,6 @@ jobs:
 
   compare:
     needs: build
-    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     strategy:
@@ -80,7 +82,7 @@ jobs:
             --workload kuma-pr \
             --scenario configured \
             --concurrency 4 \
-            --cache-mode cold,warm,edit \
+            --cache-mode edit \
             --runs 3 \
             --prepare=true \
             --isolate-go-build-cache \
