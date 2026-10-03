@@ -198,6 +198,9 @@ jobs:
             --out dist/bench/local-workflow | tee dist/bench/local-workflow-summary.md
           cat dist/bench/local-workflow-summary.md >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Report public measurements
+        run: python3 scripts/bench/report_local_workflow.py dist/bench/local-workflow/results.json
+
       - name: Upload results
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
