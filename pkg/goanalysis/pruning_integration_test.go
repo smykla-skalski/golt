@@ -1,6 +1,7 @@
 package goanalysis
 
 import (
+	"go/token"
 	"os"
 	"path/filepath"
 	"sort"
@@ -47,6 +48,20 @@ func TestPrunedCacheMergesDiagnosticsAndWritesFullCache(t *testing.T) {
 		require.NoError(t, err)
 		require.Len(t, pkgs, 1)
 		require.Empty(t, pkgs[0].Errors)
+		fset := token.NewFileSet()
+		seen := map[*packages.Package]bool{}
+		var setFileSet func(*packages.Package)
+		setFileSet = func(pkg *packages.Package) {
+			if seen[pkg] {
+				return
+			}
+			seen[pkg] = true
+			pkg.Fset = fset
+			for _, imported := range pkg.Imports {
+				setFileSet(imported)
+			}
+		}
+		setFileSet(pkgs[0])
 
 		var counts [3]atomic.Int32
 		prunable := NewLinterFromAnalyzer(&analysis.Analyzer{
