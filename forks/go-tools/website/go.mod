@@ -5,7 +5,7 @@ go 1.26.0
 replace honnef.co/go/tools => ../
 
 require (
-	github.com/BurntSushi/toml v1.4.1-0.20240526193622-a339e1f7089c
+	github.com/BurntSushi/toml v1.6.0
 	honnef.co/go/tools v0.0.0-00010101000000-000000000000
 )
 
