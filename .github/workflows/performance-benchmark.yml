@@ -166,9 +166,6 @@ jobs:
     if: github.repository == 'smykla-skalski/golt' && (github.event_name == 'push' || inputs.local_workflow)
     runs-on: ubuntu-24.04
     timeout-minutes: 60
-    permissions:
-      contents: read
-      statuses: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -200,11 +197,6 @@ jobs:
             --workdir dist/bench/workload \
             --out dist/bench/local-workflow | tee dist/bench/local-workflow-summary.md
           cat dist/bench/local-workflow-summary.md >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Publish public measurements
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-        run: python3 scripts/bench/publish_local_workflow.py dist/bench/local-workflow/results.json
 
       - name: Upload results
         if: always()

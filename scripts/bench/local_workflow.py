@@ -290,10 +290,14 @@ def main():
     print("| --- | ---: | ---: |")
     for name in [row[0] for row in cases] + ["split"]:
         group = [row for row in records if row["case"].startswith(name + "-")]
-        print(
-            f"| {name} | {statistics.median(row['makespan_seconds'] for row in group):.2f} | "
-            f"{max(row['peak_total_rss_bytes'] for row in group) / 1048576:.0f} |"
-        )
+        wall = statistics.median(row["makespan_seconds"] for row in group)
+        rss = max(row["peak_total_rss_bytes"] for row in group) / 1048576
+        print(f"| {name} | {wall:.2f} | {rss:.0f} |")
+        if os.environ.get("GITHUB_ACTIONS") == "true":
+            print(
+                f"::notice file=scripts/bench/readme.md,title=local-workflow/{name}::"
+                f"median {wall:.2f}s; max aggregate RSS {rss:.0f} MiB"
+            )
 
 
 if __name__ == "__main__":

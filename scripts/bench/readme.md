@@ -21,8 +21,8 @@ The job records each request's wall time, exit code, normalized diagnostic hash,
 process-tree peak RSS, batch makespan, and aggregate peak RSS. It rejects changed
 diagnostics and enforces a 3 GiB aggregate RSS ceiling. All linter workloads run
 on CI; local checks of the harness should be syntax and configuration checks.
-Each case also publishes its median makespan and maximum aggregate RSS as a
-commit status so results remain readable without downloading an Actions artifact.
+Each case also emits a GitHub Actions notice with its median makespan and
+maximum aggregate RSS, readable through the public check-run annotations API.
 The bounded case simulates shared admission; it does not add admission to the
 product. The supersede case measures process cancellation, not analyzer context
 propagation. Daemon RSS excludes its detached server process.
