@@ -60,6 +60,7 @@ def start(binary, workdir, output, label, linters, concurrency, gc, daemon=False
         "--allow-parallel-runners",
         "--concurrency",
         str(concurrency),
+        "--show-stats=false",
         "--output.json.path=stdout",
         "./...",
     ]
