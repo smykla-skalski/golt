@@ -17,7 +17,7 @@ jobs:
       with:
         fetch-depth: 1
         persist-credentials: false
-    - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
+    - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
       with:
         go-version: ${{ matrix.go }}
     - run: "go test ./..."
@@ -43,7 +43,7 @@ jobs:
     needs: ci
     runs-on: "ubuntu-latest"
     steps:
-    - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
+    - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
       with:
         go-version: "stable"
     # this downloads all artifacts of the current workflow into the current working directory, creating one directory per artifact
