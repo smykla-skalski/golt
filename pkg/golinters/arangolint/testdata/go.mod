@@ -15,5 +15,5 @@ require (
 	github.com/rs/zerolog v1.35.1 // indirect
 	golang.org/x/net v0.46.0 // indirect
 	golang.org/x/sys v0.37.0 // indirect
-	golang.org/x/text v0.30.0 // indirect
+	golang.org/x/text v0.39.0 // indirect
 )
