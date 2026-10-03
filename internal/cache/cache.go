@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"io"
 	"maps"
 	"os"
 	"runtime"
@@ -246,7 +245,7 @@ func (c *Cache) exportHash(pkg *packages.Package) (string, error) {
 		return "", err
 	}
 	defer f.Close()
-	r, err := gcexportdata.NewReader(f)
+	data, err := gcexportdata.ReadCompilerExportData(f)
 	if err != nil {
 		return "", err
 	}
@@ -254,7 +253,7 @@ func (c *Cache) exportHash(pkg *packages.Package) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if _, err := io.Copy(key, r); err != nil {
+	if _, err := key.Write(data); err != nil {
 		return "", err
 	}
 	sum := key.Sum()

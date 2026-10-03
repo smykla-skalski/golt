@@ -29,6 +29,7 @@ const (
 	envListCache    = "GOLT_LIST_CACHE"
 	listCacheSchema = "golt-list-v2"
 	listCacheDir    = "golt-list"
+	listCacheHit    = "hit"
 	listCacheKeep   = 8
 
 	// walkIOPerCPU oversubscribes directory reads, which mostly wait on I/O.
@@ -159,10 +160,10 @@ func (c *listCache) path() string {
 func (c *listCache) load() ([]*packages.Package, bool) {
 	pkgs, status := c.loadWithStatus()
 
-	return pkgs, status == "hit"
+	return pkgs, status == listCacheHit
 }
 
-func (c *listCache) loadWithStatus() ([]*packages.Package, string) {
+func (c *listCache) loadWithStatus() (pkgs []*packages.Package, status string) {
 	f, err := os.Open(c.path())
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -191,7 +192,7 @@ func (c *listCache) loadWithStatus() ([]*packages.Package, string) {
 	now := time.Now()
 	_ = os.Chtimes(c.path(), now, now)
 
-	return c.decode(&entry), "hit"
+	return c.decode(&entry), listCacheHit
 }
 
 // store saves pkgs loaded by a go list started at loadStart. It skips results

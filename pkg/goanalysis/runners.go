@@ -40,6 +40,61 @@ type analysisLifecycle struct {
 	linterIndexes map[string]int
 }
 
+type prunedIssueCache struct {
+	analyzers []*analysis.Analyzer
+	rootSet   map[*analysis.Analyzer]bool
+	linters   map[string]bool
+	hits      map[*packages.Package]bool
+	packages  []*packages.Package
+}
+
+func loadPrunedIssueCache(cfg runAnalyzersConfig, lintCtx *linter.Context,
+	pkgs []*packages.Package,
+) (*prunedIssueCache, []*result.Issue) {
+	analyzers := cfg.getPrunableAnalyzers()
+	pruned := &prunedIssueCache{
+		analyzers: analyzers,
+		rootSet:   make(map[*analysis.Analyzer]bool, len(analyzers)),
+		linters:   make(map[string]bool, len(analyzers)),
+		packages:  pkgs,
+	}
+	for _, analyzer := range analyzers {
+		pruned.rootSet[analyzer] = true
+		pruned.linters[cfg.getLinterNameForAnalyzer(analyzer)] = true
+	}
+	if len(analyzers) == 0 || len(pkgs) == 0 {
+		return pruned, nil
+	}
+	issues, hits := loadIssuesFromCacheWithMode(pkgs, lintCtx,
+		cache.HashModeNeedExportDeps, getPrunableIssuesCacheKey(analyzers))
+	pruned.hits = hits
+	debugf("Pruned analyzers: %d roots, %d/%d packages cached", len(analyzers), len(hits), len(pkgs))
+	if len(analyzers) == len(cfg.getAnalyzers()) {
+		pruned.packages = slices.DeleteFunc(pkgs, func(pkg *packages.Package) bool {
+			return hits[pkg]
+		})
+	}
+	return pruned, issues
+}
+
+func (p *prunedIssueCache) skipRoot(analyzer *analysis.Analyzer, pkg *packages.Package) bool {
+	return p.rootSet[analyzer] && p.hits[pkg]
+}
+
+func (p *prunedIssueCache) save(issues []*result.Issue, lintCtx *linter.Context) {
+	if len(p.analyzers) == 0 {
+		return
+	}
+	var prunableIssues []*result.Issue
+	for _, issue := range issues {
+		if p.linters[issue.FromLinter] {
+			prunableIssues = append(prunableIssues, issue)
+		}
+	}
+	saveIssuesToCacheWithMode(p.packages, p.hits, prunableIssues, lintCtx,
+		cache.HashModeNeedExportDeps, getPrunableIssuesCacheKey(p.analyzers), false)
+}
+
 func runAnalyzers(ctx context.Context, cfg runAnalyzersConfig, lintCtx *linter.Context) (retIssues []*result.Issue, retErr error) {
 	log := lintCtx.Log.Child(logutils.DebugKeyGoAnalysis)
 	sw := timeutils.NewStopwatch("analyzers", log)
@@ -65,29 +120,9 @@ func runAnalyzers(ctx context.Context, cfg runAnalyzersConfig, lintCtx *linter.C
 			pkgsToAnalyze = append(pkgsToAnalyze, pkg)
 		}
 	}
-	prunable := cfg.getPrunableAnalyzers()
-	prunableSet := make(map[*analysis.Analyzer]bool, len(prunable))
-	prunableLinters := make(map[string]bool, len(prunable))
-	for _, analyzer := range prunable {
-		prunableSet[analyzer] = true
-		prunableLinters[cfg.getLinterNameForAnalyzer(analyzer)] = true
-	}
-	var prunableFromCache map[*packages.Package]bool
-	if len(prunable) > 0 && len(pkgsToAnalyze) > 0 {
-		cached, hits := loadIssuesFromCacheWithMode(pkgsToAnalyze, lintCtx,
-			cache.HashModeNeedExportDeps, getPrunableIssuesCacheKey(prunable))
-		issues = append(issues, cached...)
-		prunableFromCache = hits
-		debugf("Pruned analyzers: %d roots, %d/%d packages cached", len(prunable), len(hits), len(pkgsToAnalyze))
-	}
-	skipRoot := func(analyzer *analysis.Analyzer, pkg *packages.Package) bool {
-		return prunableSet[analyzer] && prunableFromCache[pkg]
-	}
-	if len(prunable) == len(cfg.getAnalyzers()) {
-		pkgsToAnalyze = slices.DeleteFunc(pkgsToAnalyze, func(pkg *packages.Package) bool {
-			return prunableFromCache[pkg]
-		})
-	}
+	pruned, cachedIssues := loadPrunedIssueCache(cfg, lintCtx, pkgsToAnalyze)
+	issues = append(issues, cachedIssues...)
+	pkgsToAnalyze = pruned.packages
 
 	metrics := newAnalysisLifecycle(cfg, lintCtx.Lifecycle, len(pkgs), len(pkgsToAnalyze))
 	var statsReady func(*analysisStats)
@@ -96,7 +131,7 @@ func runAnalyzers(ctx context.Context, cfg runAnalyzersConfig, lintCtx *linter.C
 		defer func() { metrics.finishRecovered(retIssues, retErr, recover()) }()
 	}
 
-	diags, errs, passToPkg := runner.runSelected(ctx, cfg.getAnalyzers(), pkgsToAnalyze, statsReady, skipRoot)
+	diags, errs, passToPkg := runner.runSelected(ctx, cfg.getAnalyzers(), pkgsToAnalyze, statsReady, pruned.skipRoot)
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -105,16 +140,7 @@ func runAnalyzers(ctx context.Context, cfg runAnalyzersConfig, lintCtx *linter.C
 		if len(errs) == 0 {
 			// If we try to save to cache even if we have compilation errors
 			// we won't see them on repeated runs.
-			if len(prunable) > 0 {
-				var prunableIssues []*result.Issue
-				for _, issue := range issues {
-					if prunableLinters[issue.FromLinter] {
-						prunableIssues = append(prunableIssues, issue)
-					}
-				}
-				saveIssuesToCacheWithMode(pkgsToAnalyze, prunableFromCache, prunableIssues, lintCtx,
-					cache.HashModeNeedExportDeps, getPrunableIssuesCacheKey(prunable), false)
-			}
+			pruned.save(issues, lintCtx)
 			saveIssuesToCache(pkgs, pkgsFromCache, issues, lintCtx, cfg.getAnalyzers())
 		}
 	}()

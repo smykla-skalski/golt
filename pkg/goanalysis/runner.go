@@ -288,10 +288,6 @@ func (r *runner) prepareAnalysis(pkgs []*packages.Package,
 	return initialPkgs, allActions, roots
 }
 
-func (r *runner) analyze(ctx context.Context, pkgs []*packages.Package, analyzers []*analysis.Analyzer) ([]*action, analysisStats) {
-	return r.analyzeSelected(ctx, pkgs, analyzers, nil)
-}
-
 func (r *runner) analyzeSelected(ctx context.Context, pkgs []*packages.Package, analyzers []*analysis.Analyzer,
 	skipRoot func(*analysis.Analyzer, *packages.Package) bool,
 ) ([]*action, analysisStats) {
