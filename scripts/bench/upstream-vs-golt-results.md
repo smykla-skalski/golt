@@ -3,9 +3,24 @@
 **Compared:** [upstream v2.14.0](https://github.com/golangci/golangci-lint/releases/tag/v2.14.0)
 (`114493f9`) and golt `10a6fe80` for the original four rows; the cold Kuma row
 uses golt `58014932`. Both binaries were built from source with Go 1.26.0 and
-tested on Ubuntu 24.04. The first table uses ordinary single-process runs of
-`govet`, `staticcheck`, and `unused`. A separate table below measures overlapping
-requests.
+tested on Ubuntu 24.04. All measurements use `govet`, `staticcheck`, and
+`unused`. The parallel comparison below measures three overlapping linter
+processes per binary; later sections cover single invocations and serial batches.
+
+## Upstream parallel versus golt parallel
+
+Both binaries ran three simultaneous requests with `--allow-parallel-runners`
+on the same pinned workload. The table reports median batch completion time
+from five CI repetitions and the highest sampled aggregate process-tree RSS.
+
+| Workload | Upstream, 3 parallel | Golt, 3 parallel | Golt wall change | Upstream peak RSS | Golt peak RSS |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| cache-buster, warm | 0.777 s | 0.286 s | **63.2% faster** | 380 MiB | 217 MiB |
+| Kuma API, edited | 2.326 s | 1.726 s | **25.8% faster** | 1011 MiB | 931 MiB |
+
+[CI run and raw per-request results](https://github.com/smykla-skalski/golt/actions/runs/37129315267).
+This Kuma workload is only `./api/...` with tests disabled; it does not measure
+the full-repository Kuma PR check. The serial comparison and protocol are below.
 
 ## Single invocation
 
