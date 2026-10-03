@@ -1,6 +1,6 @@
 module honnef.co/go/tools/website
 
-go 1.26.0
+go 1.27.1
 
 replace honnef.co/go/tools => ../
 

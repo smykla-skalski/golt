@@ -1,6 +1,6 @@
 module protogetter
 
-go 1.26.0
+go 1.27.1
 
 require (
 	google.golang.org/grpc v1.83.2
