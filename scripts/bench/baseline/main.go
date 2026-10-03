@@ -108,25 +108,26 @@ type scenario struct {
 }
 
 type options struct {
-	ManifestPath       string
-	ForkBin            string
-	UpstreamBin        string
-	OutputDir          string
-	Workload           string
-	Module             string
-	Scenario           string
-	Concurrency        string
-	CacheMode          string
-	BinaryOrder        string
-	Runs               int
-	Profiles           bool
-	Compatibility      bool
-	Prepare            bool
-	ProfileConcurrency int
-	RunTimeout         time.Duration
-	MaxRSSMiB          uint64
-	GoMaxProcs         int
-	Nice               int
+	ManifestPath        string
+	ForkBin             string
+	UpstreamBin         string
+	OutputDir           string
+	Workload            string
+	Module              string
+	Scenario            string
+	Concurrency         string
+	CacheMode           string
+	BinaryOrder         string
+	Runs                int
+	Profiles            bool
+	Compatibility       bool
+	Prepare             bool
+	IsolateGoBuildCache bool
+	ProfileConcurrency  int
+	RunTimeout          time.Duration
+	MaxRSSMiB           uint64
+	GoMaxProcs          int
+	Nice                int
 }
 
 type binary struct {
@@ -419,6 +420,7 @@ func parseOptions(args []string) (options, error) {
 	fs.BoolVar(&opts.Profiles, "profiles", false, "capture separate CPU, heap, and trace profiles")
 	fs.BoolVar(&opts.Compatibility, "compatibility", false, "compare diagnostics from fork and upstream binaries")
 	fs.BoolVar(&opts.Prepare, "prepare", true, "prewarm the Go build and module caches")
+	fs.BoolVar(&opts.IsolateGoBuildCache, "isolate-go-build-cache", false, "use a separate Go build cache for each binary")
 	fs.IntVar(&opts.ProfileConcurrency, "profile-concurrency", defaultProfileConcurrency, "concurrency for profile runs")
 	fs.DurationVar(&opts.RunTimeout, "run-timeout", defaultRunTimeout, "hard timeout for each golangci-lint process")
 	fs.Uint64Var(&opts.MaxRSSMiB, "max-rss-mib", defaultMaxRSSMiB, "kill a process tree above this RSS")
@@ -2215,6 +2217,9 @@ func (r *runner) newBenchmarkCommand(
 		"GOROOT="+r.goRoot,
 		"PATH="+filepath.Join(r.goRoot, "bin")+string(os.PathListSeparator)+os.Getenv("PATH"),
 	)
+	if r.opts.IsolateGoBuildCache {
+		environ = replaceEnv(environ, "GOCACHE="+filepath.Join(r.outDir, "go-build", bin.Label))
+	}
 	for _, value := range extra {
 		if !strings.HasPrefix(value, "--") {
 			environ = replaceEnv(environ, value)

@@ -1,0 +1,342 @@
+name: Kuma PR performance experiments
+
+on:
+  push:
+    branches: [perf/kuma-next]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: kuma-pr-experiments-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GOGC: '80'
+
+jobs:
+  verify:
+    if: github.repository == 'smykla-skalski/golt'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: 1.27.1
+          cache: false
+      - run: go test ./scripts/bench/baseline ./pkg/lint
+
+  build:
+    needs: verify
+    if: github.repository == 'smykla-skalski/golt'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: 1.27.1
+          cache: false
+      - name: Build upstream v2.14.0 and golt
+        run: |
+          git fetch --no-tags https://github.com/golangci/golangci-lint.git \
+            refs/tags/v2.14.0:refs/tags/benchmark-upstream
+          go run ./scripts/bench/build_pair \
+            --candidate-ref HEAD \
+            --upstream-ref refs/tags/benchmark-upstream \
+            --baseline-mode exact \
+            --out-dir dist/bench/bin \
+            --build-timeout 15m \
+            --max-memory-mib 4096 \
+            --go-max-procs 4 \
+            --nice 10
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: kuma-pr-binaries
+          path: dist/bench/bin
+          if-no-files-found: error
+          retention-days: 1
+
+  compare:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        case:
+          - {name: cold-go, modes: cold, runs: 1, prepare: false}
+          - {name: warm-go, modes: 'cold,warm,edit', runs: 3, prepare: true}
+        order: [fork-first, upstream-first]
+    name: ${{ matrix.case.name }} (${{ matrix.order }})
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: 1.27.1
+          cache: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: kuma-pr-binaries
+          path: dist/bench/bin
+      - name: Benchmark full Kuma PR workload
+        env:
+          CASE_NAME: ${{ matrix.case.name }}
+          CACHE_MODES: ${{ matrix.case.modes }}
+          RUNS: ${{ matrix.case.runs }}
+          PREPARE: ${{ matrix.case.prepare }}
+          ORDER: ${{ matrix.order }}
+        run: |
+          chmod +x dist/bench/bin/fork dist/bench/bin/upstream
+          go run ./scripts/bench/baseline \
+            --manifest scripts/bench/kuma-pr.json \
+            --fork-bin dist/bench/bin/fork \
+            --upstream-bin dist/bench/bin/upstream \
+            --binary-order "$ORDER" \
+            --out "results/$CASE_NAME/$ORDER" \
+            --workload kuma-pr \
+            --scenario configured \
+            --concurrency 4 \
+            --cache-mode "$CACHE_MODES" \
+            --runs "$RUNS" \
+            --prepare="$PREPARE" \
+            --isolate-go-build-cache \
+            --run-timeout 20m \
+            --max-rss-mib 8192 \
+            --go-max-procs 4 \
+            --nice 10
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: kuma-pr-${{ matrix.case.name }}-${{ matrix.order }}
+          path: |
+            results
+            !results/**/workloads/**
+            !results/**/cache/**
+            !results/**/go-build/**
+          if-no-files-found: error
+          retention-days: 30
+
+  profile:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: 1.27.1
+          cache: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: kuma-pr-binaries
+          path: dist/bench/bin
+      - name: Capture CPU, heap and trace profiles
+        run: |
+          chmod +x dist/bench/bin/fork
+          go run ./scripts/bench/baseline \
+            --manifest scripts/bench/kuma-pr.json \
+            --fork-bin dist/bench/bin/fork \
+            --out results/profile \
+            --workload kuma-pr \
+            --scenario configured \
+            --concurrency 4 \
+            --cache-mode cold \
+            --runs 1 \
+            --profiles \
+            --prepare=true \
+            --isolate-go-build-cache \
+            --run-timeout 20m \
+            --max-rss-mib 8192 \
+            --go-max-procs 4 \
+            --nice 10
+      - name: Summarize profiles
+        run: |
+          for profile in results/profile/profiles/*.cpu.pprof results/profile/profiles/*.heap.pprof; do
+            echo "### $(basename "$profile")" >> "$GITHUB_STEP_SUMMARY"
+            go tool pprof -top -nodecount=20 "$profile" >> "$GITHUB_STEP_SUMMARY"
+          done
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: kuma-pr-profiles
+          path: |
+            results/profile
+            !results/profile/workloads/**
+            !results/profile/cache/**
+            !results/profile/go-build/**
+          if-no-files-found: error
+          retention-days: 30
+
+  list_cache:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: 1.27.1
+          cache: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: kuma-pr-binaries
+          path: dist/bench/bin
+      - name: Compare list cache enabled and disabled
+        run: |
+          chmod +x dist/bench/bin/fork
+          printf '#!/bin/sh\nGOLT_LIST_CACHE=0 exec "%s" "$@"\n' \
+            "$PWD/dist/bench/bin/fork" > dist/bench/bin/fork-no-list-cache
+          chmod +x dist/bench/bin/fork-no-list-cache
+          go run ./scripts/bench/baseline \
+            --manifest scripts/bench/kuma-pr.json \
+            --fork-bin dist/bench/bin/fork \
+            --upstream-bin dist/bench/bin/fork-no-list-cache \
+            --out results/list-cache \
+            --workload kuma-pr \
+            --scenario configured \
+            --concurrency 4 \
+            --cache-mode cold,warm,edit \
+            --runs 3 \
+            --prepare=true \
+            --isolate-go-build-cache \
+            --run-timeout 20m \
+            --max-rss-mib 8192 \
+            --go-max-procs 4 \
+            --nice 10
+          echo 'Fork = list cache enabled; upstream = the same golt binary with list cache disabled.' >> "$GITHUB_STEP_SUMMARY"
+          go run ./scripts/bench/summary -max-wall-regression 1000 results/list-cache >> "$GITHUB_STEP_SUMMARY"
+      - name: Record cache decisions
+        env:
+          GL_DEBUG: loader
+        run: |
+          go run ./scripts/bench/baseline \
+            --manifest scripts/bench/kuma-pr.json \
+            --fork-bin dist/bench/bin/fork \
+            --out results/list-cache-debug \
+            --workload kuma-pr \
+            --scenario configured \
+            --concurrency 4 \
+            --cache-mode warm,edit \
+            --runs 1 \
+            --prepare=true \
+            --isolate-go-build-cache \
+            --run-timeout 20m \
+            --max-rss-mib 8192 \
+            --go-max-procs 4 \
+            --nice 10
+          rg 'Go list cache|go/packages.Load took' results/list-cache-debug/logs >> "$GITHUB_STEP_SUMMARY" || true
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: kuma-pr-list-cache
+          path: |
+            results/list-cache
+            results/list-cache-debug
+            !results/**/workloads/**
+            !results/**/cache/**
+            !results/**/go-build/**
+          if-no-files-found: error
+          retention-days: 30
+
+  pgo:
+    needs: [build, profile]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: 1.27.1
+          cache: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: kuma-pr-binaries
+          path: dist/bench/bin
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: kuma-pr-profiles
+          path: dist/profile
+      - name: Build PGO golt from the same commit
+        run: |
+          profile=$(find dist/profile -name '*.cpu.pprof' -print -quit)
+          test -n "$profile"
+          commit_date=$(git show -s --format=%cI HEAD)
+          GOMAXPROCS=4 GOMEMLIMIT=4096MiB GOFLAGS=-p=4 go build \
+            -pgo="$(realpath "$profile")" \
+            -buildvcs=false -trimpath \
+            -ldflags "-s -w -X main.version=benchmark -X main.commit=$GITHUB_SHA -X main.date=$commit_date" \
+            -o dist/bench/bin/fork-pgo ./cmd/golangci-lint
+          go version -m dist/bench/bin/fork-pgo > dist/bench/bin/pgo-build.txt
+      - name: Compare PGO against the original golt build
+        run: |
+          chmod +x dist/bench/bin/fork dist/bench/bin/fork-pgo
+          go run ./scripts/bench/baseline \
+            --manifest scripts/bench/kuma-pr.json \
+            --fork-bin dist/bench/bin/fork-pgo \
+            --upstream-bin dist/bench/bin/fork \
+            --out results/pgo \
+            --workload kuma-pr \
+            --scenario configured \
+            --concurrency 4 \
+            --cache-mode cold,warm,edit \
+            --runs 3 \
+            --prepare=true \
+            --isolate-go-build-cache \
+            --run-timeout 20m \
+            --max-rss-mib 8192 \
+            --go-max-procs 4 \
+            --nice 10
+          echo 'Fork = PGO golt; upstream = original golt build.' >> "$GITHUB_STEP_SUMMARY"
+          go run ./scripts/bench/summary -max-wall-regression 1000 results/pgo >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: kuma-pr-pgo
+          path: |
+            results/pgo
+            dist/bench/bin/pgo-build.txt
+            !results/pgo/workloads/**
+            !results/pgo/cache/**
+            !results/pgo/go-build/**
+          if-no-files-found: error
+          retention-days: 30
+
+  summary:
+    needs: [build, compare]
+    if: always() && needs.build.result == 'success'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: 1.27.1
+          cache: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: kuma-pr-*-first
+          path: dist
+          merge-multiple: true
+      - name: Summarize cold and warm Go build cache results
+        run: |
+          for name in cold-go warm-go; do
+            echo "### $name" >> "$GITHUB_STEP_SUMMARY"
+            go run ./scripts/bench/summary -max-wall-regression 1000 "dist/$name" >> "$GITHUB_STEP_SUMMARY"
+          done
