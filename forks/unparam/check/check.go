@@ -221,7 +221,7 @@ func (c *Checker) Check() ([]Issue, error) {
 
 	wantPkg := make(map[*types.Package]*packages.Package)
 	genFiles := make(map[string]bool)
-	embeddedFields := make(map[*types.Package]bool)
+	localMethods := make(map[*types.Package]bool)
 	for _, pkg := range c.pkgs {
 		wantPkg[pkg.Types] = pkg
 		for _, f := range pkg.Syntax {
@@ -231,13 +231,6 @@ func (c *Checker) Check() ([]Issue, error) {
 			}
 			ast.Inspect(f, func(node ast.Node) bool {
 				switch node := node.(type) {
-				case *ast.StructType:
-					for _, field := range node.Fields.List {
-						if len(field.Names) == 0 {
-							embeddedFields[pkg.Types] = true
-							break
-						}
-					}
 				case *ast.ValueSpec:
 					if len(node.Values) == 0 || node.Type == nil ||
 						len(node.Names) != 1 || node.Names[0].Name != "_" {
@@ -256,6 +249,9 @@ func (c *Checker) Check() ([]Issue, error) {
 				// FuncLit.Type.Func or the position of the
 				// FuncDecl.Name.
 				case *ast.FuncDecl:
+					if node.Recv != nil {
+						localMethods[pkg.Types] = true
+					}
 					c.funcBodyByPos[node.Name.Pos()] = node.Body
 					if linknameDoc(node.Doc) {
 						c.linknamed[node.Name.Pos()] = true
@@ -270,8 +266,8 @@ func (c *Checker) Check() ([]Issue, error) {
 	allFuncs := make(map[*ssa.Function]bool)
 	for _, pkg := range c.pkgs {
 		var found map[*ssa.Function]bool
-		// Promoted methods can be reached through reflection without a direct interface conversion.
-		if c.srcFuncs != nil && !embeddedFields[pkg.Types] {
+		// Reflective wrappers can call local methods without a direct interface conversion.
+		if c.srcFuncs != nil && !localMethods[pkg.Types] {
 			found = ssautil.AllFunctionsForPackageSource(c.prog, pkg.Types, c.srcFuncs)
 		} else {
 			found = ssautil.AllFunctionsForPackage(c.prog, pkg.Types)
