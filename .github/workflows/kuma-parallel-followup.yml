@@ -32,6 +32,7 @@ jobs:
           (cd forks/tools && go test ./go/ssa/ssautil)
           (cd forks/unparam && go test ./...)
       - name: Build upstream v2.14.0 and merged golt
+        if: github.event_name == 'workflow_dispatch'
         run: |
           git fetch --no-tags https://github.com/golangci/golangci-lint.git \
             refs/tags/v2.14.0:refs/tags/benchmark-upstream
@@ -56,6 +57,7 @@ jobs:
             --go-max-procs 4 \
             --nice 10
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: github.event_name == 'workflow_dispatch'
         with:
           name: kuma-parallel-binaries
           path: dist/bench/bin
@@ -69,6 +71,7 @@ jobs:
           retention-days: 1
 
   compare:
+    if: github.event_name == 'workflow_dispatch'
     needs: build
     runs-on: ubuntu-24.04
     timeout-minutes: 120
@@ -131,6 +134,7 @@ jobs:
           retention-days: 30
 
   profile:
+    if: github.event_name == 'workflow_dispatch'
     needs: build
     runs-on: ubuntu-24.04
     timeout-minutes: 75
@@ -190,6 +194,7 @@ jobs:
           retention-days: 30
 
   edit-comparison:
+    if: github.event_name == 'workflow_dispatch'
     needs: build
     runs-on: ubuntu-24.04
     timeout-minutes: 120
