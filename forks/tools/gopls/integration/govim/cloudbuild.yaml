@@ -12,7 +12,7 @@ substitutions:
 
 steps:
   # Build gopls from source, to use with the govim integration tests.
-  - name: 'golang:1.14'
+  - name: 'golang:1.14@sha256:1a7173b5b9a3af3e29a5837e0b2027e1c438fd1b83bbee8f221355087ad416d6'
     env: ['GOPROXY=https://proxy.golang.org']
     dir: 'gopls'
     args: ['go', 'build']
@@ -32,18 +32,18 @@ steps:
 
   # The govim tests produce a large number of artifacts; tarball/gzip to reduce
   # roundtrips and save space.
-  - name: 'ubuntu'
+  - name: 'ubuntu@sha256:f144425ff09be612d6d9ad965196e9cdc23dae1f42110a8a11a3e9a8198759f7'
     volumes:
       - name: artifacts
         path: /artifacts
     args: ['tar', '-czf', 'artifacts.tar.gz', '/artifacts']
 
   # Upload artifacts to GCS.
-  - name: 'gcr.io/cloud-builders/gcloud'
+  - name: 'gcr.io/cloud-builders/gcloud@sha256:0969e3b72bdd35d03a0e3f33fb6745f11aa7ec5d3d668edebae53fb43d7d6b0c'
     args: ['storage', 'cp', 'artifacts.tar.gz', 'gs://${_RESULT_BUCKET}/govim/${BUILD_ID}/artifacts.tar.gz']
 
   # Exit with the actual exit code of the integration tests.
-  - name: 'ubuntu'
+  - name: 'ubuntu@sha256:f144425ff09be612d6d9ad965196e9cdc23dae1f42110a8a11a3e9a8198759f7'
     args: ['bash', 'govim_test_result.sh']
 
 # Write build logs to the same bucket as artifacts, so they can be more easily
