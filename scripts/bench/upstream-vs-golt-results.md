@@ -27,6 +27,24 @@ per-request logs and JSON output. Parallel batches were slower than serial
 for both binaries, so heavy edited requests should remain serial. The Go
 memory limit is soft; upstream's two processes exceeded 8 GiB aggregate RSS.
 
+The [optimized-candidate CI run](https://github.com/smykla-skalski/golt/actions/runs/37188867865)
+repeated the same workload after narrowing `unparam`'s SSA function walk.
+Each row again has three batches per binary and execution order.
+
+| Order | Policy | Upstream batch | Optimized golt batch | Golt change | Upstream RSS | Golt RSS |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| Golt first | Serial | 156.68 s | 15.50 s | 90.1% faster | 4,413 MiB | 2,198 MiB |
+| Upstream first | Serial | 188.81 s | 16.78 s | 91.1% faster | 4,410 MiB | 2,178 MiB |
+| Golt first | Parallel | 242.24 s | 19.07 s | 92.1% faster | 8,683 MiB | 4,638 MiB |
+| Upstream first | Parallel | 307.57 s | 25.16 s | 91.8% faster | 8,601 MiB | 4,537 MiB |
+
+The 2,969 prefilter issue count and zero final issues matched in every
+request, as did the final JSON hash.
+
+These are complete-product comparisons. Run-to-run variation means the two
+tables do not isolate the SSA change; the paired main-versus-candidate edit
+benchmark in [the Kuma experiments](kuma-pr-experiments.md) does that.
+
 ## Three-linter subset
 
 **Compared:** [upstream v2.14.0](https://github.com/golangci/golangci-lint/releases/tag/v2.14.0)

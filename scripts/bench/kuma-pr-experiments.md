@@ -100,6 +100,37 @@ upstream golangci-lint release.
 | Main first | Edited | 28.12 s | 14.48 s | 48.5% faster | 2,507 MiB | 2,307 MiB |
 | Candidate first | Edited | 41.73 s | 20.91 s | 49.9% faster | 2,482 MiB | 2,240 MiB |
 
+## Scoping unparam's SSA function walk
+
+The [follow-up CI run](https://github.com/smykla-skalski/golt/actions/runs/37188867865)
+compares merged golt main with a candidate that avoids method materialization
+for unrelated imported runtime types during `unparam` analysis. It uses the
+same pinned full Kuma PR, 28 linters, tests enabled, `./...`, Go 1.27.1, two
+Go CPUs, `GOGC=80`, and a 3 GiB per-process Go soft memory limit. Each row is
+the median of three edited runs with warm Go build and analysis caches. The
+two orders used separate CI runners.
+
+| Order | Merged main | Scoped candidate | Candidate change | Main RSS | Candidate RSS |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Candidate first | 25.70 s | 19.26 s | 25.1% faster | 2,243 MiB | 2,129 MiB |
+| Main first | 26.51 s | 21.10 s | 20.4% faster | 2,235 MiB | 2,131 MiB |
+
+A separate edited-run CPU profile dropped from 34.45 to 24.52 sampled CPU
+seconds. `unparam`'s cumulative analyzer time fell from 15.74 to 5.50 seconds;
+`ssautil.AllFunctions` and its scoped replacement accounted for 11.48 and
+3.64 sampled CPU seconds respectively. Profiled wall time fell from 20.98 to
+16.09 seconds. Profiles show where CPU time went; the table above contains
+the unprofiled timing samples.
+
+The [edit-parity CI run](https://github.com/smykla-skalski/golt/actions/runs/37190914162)
+compared unfiltered `unparam` JSON diagnostics against merged main after
+comment, function-body, exported-API, build-tag, and `go.mod` edits. A small
+deliberate fixture produced one finding in each case, identical between the
+two binaries; the pinned Kuma source produced no unfiltered `unparam`
+findings by itself. The fork's upstream test suite, including method and
+closure cases, also passed in CI. The configured full-run prefilter count
+remained 2,969 for upstream golangci-lint and golt in every request.
+
 ## Isolating the list cache
 
 This compares the **same golt binary** with `GOLT_LIST_CACHE=0` versus the
