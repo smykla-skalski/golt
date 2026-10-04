@@ -23,8 +23,8 @@ per binary. RSS is the highest sampled aggregate process-tree RSS for a batch.
 
 The configured workload reported 2,969 issues before filtering and zero final
 issues for both binaries in every request. The CI artifact contains all
-per-request logs and JSON output. Parallel batches were slower than serial
-for both binaries, so heavy edited requests should remain serial. The Go
+per-request logs and JSON output. For this two-request setup, serial batches
+were faster and used less memory for both binaries. The Go
 memory limit is soft; upstream's two processes exceeded 8 GiB aggregate RSS.
 
 The [optimized-candidate CI run](https://github.com/smykla-skalski/golt/actions/runs/37188867865)
@@ -39,11 +39,14 @@ Each row again has three batches per binary and execution order.
 | Upstream first | Parallel | 307.57 s | 25.16 s | 91.8% faster | 8,601 MiB | 4,537 MiB |
 
 The 2,969 prefilter issue count and zero final issues matched in every
-request, as did the final JSON hash.
+request, as did the final JSON hash. Since the configured run filters every
+issue, [separate unfiltered `unparam` edit checks](kuma-pr-experiments.md#scoping-unparams-ssa-function-walk)
+also compared diagnostics across five edit types with a deliberate finding.
 
 These are complete-product comparisons. Run-to-run variation means the two
-tables do not isolate the SSA change; the paired main-versus-candidate edit
-benchmark in [the Kuma experiments](kuma-pr-experiments.md) does that.
+tables do not isolate the SSA change. The paired main-versus-candidate edit
+benchmark found the candidate 20.4–25.1% faster with lower RSS; see
+[the Kuma experiments](kuma-pr-experiments.md#scoping-unparams-ssa-function-walk).
 
 ## Three-linter subset
 
@@ -146,9 +149,9 @@ upstream-versus-golt comparison.
 
 The 4.250-second cold Kuma API number above excludes that expensive Go build
 cache miss and analyzes a much smaller package set. “Cold” in the table refers
-only to the golangci-lint analysis cache. Use the full-repository CI jobs to
-estimate Kuma PR latency.
+only to the golangci-lint analysis cache. Use the controlled full Kuma tables
+above for edited local requests; the Kuma PR jobs show the cache-miss CI case.
 
-Source revisions: [cache-buster `1ed2641`](https://github.com/Automaat/cache-buster/commit/1ed2641a75cb424a592fa3eddf76da32180e7ed4)
+Three-linter subset source revisions: [cache-buster `1ed2641`](https://github.com/Automaat/cache-buster/commit/1ed2641a75cb424a592fa3eddf76da32180e7ed4)
 and [Kuma `12fbf5f`](https://github.com/kumahq/kuma/commit/12fbf5f561e00b5f71eb5e72dc82e1a9eb4f9e87).
 The CI runs link to raw timing and compatibility artifacts.
