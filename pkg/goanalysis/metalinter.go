@@ -70,6 +70,14 @@ func (ml MetaLinter) getAnalyzers() []*analysis.Analyzer {
 	return allAnalyzers
 }
 
+func (ml MetaLinter) getPrunableAnalyzers() []*analysis.Analyzer {
+	var analyzers []*analysis.Analyzer
+	for _, l := range ml.linters {
+		analyzers = append(analyzers, l.getPrunableAnalyzers()...)
+	}
+	return analyzers
+}
+
 func (MetaLinter) getName() string {
 	return "metalinter"
 }

@@ -104,6 +104,11 @@ func NewReader(r io.Reader) (io.Reader, error) {
 	}, nil
 }
 
+// ReadCompilerExportData excludes archive build IDs from dependency hashes.
+func ReadCompilerExportData(r io.Reader) ([]byte, error) {
+	return gcimporter.ReadUnified(bufio.NewReader(r))
+}
+
 // readAll works the same way as io.ReadAll, but avoids allocations and copies
 // by preallocating a byte slice of the necessary size if the size is known up
 // front. This is always possible when the input is an archive. In that case,

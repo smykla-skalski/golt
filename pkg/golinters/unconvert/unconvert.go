@@ -42,6 +42,7 @@ func New(settings *config.UnconvertSettings) *goanalysis.Linter {
 		WithIssuesReporter(func(*linter.Context) []*goanalysis.Issue {
 			return resIssues
 		}).
+		WithCacheableIssuesReporter().
 		WithLoadMode(goanalysis.LoadModeTypesInfo)
 }
 
