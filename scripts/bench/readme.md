@@ -41,6 +41,17 @@ repetitions.
 
 Measured results: [upstream versus golt](upstream-vs-golt-results.md).
 
+Dispatch `Kuma make check lint benchmark` for the local Go lint step in
+Kuma's `make check`. It compares upstream v2.14.0 and golt on pinned Kuma
+`c993a123` with the root `.golangci.yml`. Each invocation runs exactly
+`CGO_ENABLED=0 GOMEMLIMIT=7GiB golangci-lint run --timeout=10m -v` from the
+repository root. The harness isolates each binary's lint cache, warms the
+shared Go build cache, and measures cold analysis, warm no-edit, and a Go
+source edit in both binary orders. It checks exit codes, output, prefilter
+issue counts, and checkout changes. It does not run Kuma's format generators
+or its other lint targets. Kuma's separate CI lint action passes `--fix=false`
+and `GOGC=80`; the local command inherits `issues.fix: true` from its config.
+
 Dispatch `Performance benchmark` with `local_workflow=false`,
 `upstream_tag=v2.14.0`, and the desired workload and cache mode. The hosted job
 fetches that official release, builds both binaries with Go 1.26, runs seven
