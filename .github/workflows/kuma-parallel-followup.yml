@@ -1,6 +1,8 @@
 name: Full Kuma parallel follow-up
 
 on:
+  push:
+    branches: [perf/kuma-parallel-followup]
   workflow_dispatch:
 
 permissions:
