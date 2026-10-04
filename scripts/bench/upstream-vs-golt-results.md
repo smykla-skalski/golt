@@ -40,6 +40,53 @@ reuse and profile the remaining analysis before changing the default GC policy.
 For the full Kuma PR cold and warm single-run results, see
 [the full Kuma PR experiments](kuma-pr-experiments.md).
 
+### Reusing source SSA functions in `unparam`
+
+The [profile](https://github.com/smykla-skalski/golt/actions/runs/37227153985)
+of an edited local lint run took 9.12 seconds. `unparam` used 4.46 seconds of
+CPU samples, including about 4.0 seconds in SSA function discovery and runtime
+type traversal. The [paired CI run](https://github.com/smykla-skalski/golt/actions/runs/37228071499)
+compares golt main `3008e7e6` with candidate `7bea8cbb` on the same pinned
+Kuma checkout and command above. Each row is the median of three requests;
+orders ran on separate Ubuntu 24.04 runners.
+
+| Order | Case | Main | Candidate | Change | Main RSS | Candidate RSS |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| Candidate first | Cold analysis | 41.53 s | 40.01 s | 3.6% faster | 6,889 MiB | 6,864 MiB |
+| Main first | Cold analysis | 41.02 s | 38.49 s | 6.2% faster | 6,895 MiB | 6,883 MiB |
+| Candidate first | Warm, no edit | 0.38 s | 0.38 s | unchanged | 144 MiB | 152 MiB |
+| Main first | Warm, no edit | 0.38 s | 0.37 s | unchanged | 152 MiB | 150 MiB |
+| Candidate first | Edited | 11.31 s | 9.88 s | 12.6% faster | 4,949 MiB | 4,784 MiB |
+| Main first | Edited | 10.77 s | 9.22 s | 14.4% faster | 5,137 MiB | 4,594 MiB |
+
+All 36 timed requests produced identical output, 2,969 prefilter issues and
+zero final issues. The separate unfiltered `unparam` parity check matched main
+for comment, body, exported-function, build-tag, and module edits, with a
+deliberate unused-parameter finding in each case. This is an incremental golt
+comparison, not a new upstream comparison. The profile uses sampled CPU time,
+which can exceed wall time when analysis runs concurrently.
+
+That first candidate skipped reflection type traversal for every package. It
+can miss wrappers used by reflective method calls. The revised candidate
+`fa8b596e` keeps the full traversal whenever a package declares local methods
+and uses the source-SSA path for packages without local methods. The
+[final paired CI run](https://github.com/smykla-skalski/golt/actions/runs/37229587519)
+measured the revised candidate against the same main commit and command.
+
+| Order | Case | Main | Revised candidate | Change | Main RSS | Candidate RSS |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| Candidate first | Cold analysis | 38.16 s | 37.33 s | 2.2% faster | 6,926 MiB | 6,920 MiB |
+| Main first | Cold analysis | 30.13 s | 29.52 s | 2.0% faster | 6,900 MiB | 6,841 MiB |
+| Candidate first | Warm, no edit | 0.35 s | 0.35 s | unchanged | 151 MiB | 153 MiB |
+| Main first | Warm, no edit | 0.35 s | 0.35 s | unchanged | 170 MiB | 171 MiB |
+| Candidate first | Edited | 10.20 s | 9.54 s | 6.4% faster | 4,986 MiB | 4,732 MiB |
+| Main first | Edited | 8.41 s | 7.54 s | 10.3% faster | 5,047 MiB | 4,282 MiB |
+
+All 36 timed requests again produced identical output and issue counts. The
+unfiltered `unparam` parity check matched main across the same five edit
+types. The revised candidate is the result to use when estimating the change
+to local `make check` lint time.
+
 ## Full Kuma PR: two edited requests
 
 The [full-workload CI run](https://github.com/smykla-skalski/golt/actions/runs/37186325743)

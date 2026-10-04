@@ -49,8 +49,9 @@ func UnusedParams(tests, exported, debug bool, args ...string) ([]string, error)
 // UnusedParams instead, unless you want to use a *loader.Program and
 // *ssa.Program directly.
 type Checker struct {
-	pkgs []*packages.Package
-	prog *ssa.Program
+	pkgs     []*packages.Package
+	prog     *ssa.Program
+	srcFuncs []*ssa.Function
 
 	wd string
 
@@ -157,6 +158,11 @@ func (c *Checker) ProgramSSA(prog *ssa.Program) {
 	c.prog = prog
 }
 
+// SourceFunctions supplies functions already discovered by buildssa.
+func (c *Checker) SourceFunctions(funcs []*ssa.Function) {
+	c.srcFuncs = funcs
+}
+
 // CheckExportedFuncs sets whether to inspect exported functions
 func (c *Checker) CheckExportedFuncs(exported bool) {
 	c.exported = exported
@@ -215,6 +221,7 @@ func (c *Checker) Check() ([]Issue, error) {
 
 	wantPkg := make(map[*types.Package]*packages.Package)
 	genFiles := make(map[string]bool)
+	localMethods := make(map[*types.Package]bool)
 	for _, pkg := range c.pkgs {
 		wantPkg[pkg.Types] = pkg
 		for _, f := range pkg.Syntax {
@@ -242,6 +249,9 @@ func (c *Checker) Check() ([]Issue, error) {
 				// FuncLit.Type.Func or the position of the
 				// FuncDecl.Name.
 				case *ast.FuncDecl:
+					if node.Recv != nil {
+						localMethods[pkg.Types] = true
+					}
 					c.funcBodyByPos[node.Name.Pos()] = node.Body
 					if linknameDoc(node.Doc) {
 						c.linknamed[node.Name.Pos()] = true
@@ -255,7 +265,14 @@ func (c *Checker) Check() ([]Issue, error) {
 	}
 	allFuncs := make(map[*ssa.Function]bool)
 	for _, pkg := range c.pkgs {
-		for fn := range ssautil.AllFunctionsForPackage(c.prog, pkg.Types) {
+		var found map[*ssa.Function]bool
+		// Reflective wrappers can call local methods without a direct interface conversion.
+		if c.srcFuncs != nil && !localMethods[pkg.Types] {
+			found = ssautil.AllFunctionsForPackageSource(c.prog, pkg.Types, c.srcFuncs)
+		} else {
+			found = ssautil.AllFunctionsForPackage(c.prog, pkg.Types)
+		}
+		for fn := range found {
 			allFuncs[fn] = true
 		}
 	}
@@ -274,11 +291,17 @@ func (c *Checker) Check() ([]Issue, error) {
 			addSrcFunc(anon)
 		}
 	}
-	for _, pkg := range c.pkgs {
-		for _, def := range pkg.TypesInfo.Defs {
-			if def, ok := def.(*types.Func); ok {
-				if fn := c.prog.FuncValue(def); fn != nil {
-					addSrcFunc(fn)
+	if c.srcFuncs != nil {
+		for _, fn := range c.srcFuncs {
+			addSrcFunc(fn)
+		}
+	} else {
+		for _, pkg := range c.pkgs {
+			for _, def := range pkg.TypesInfo.Defs {
+				if def, ok := def.(*types.Func); ok {
+					if fn := c.prog.FuncValue(def); fn != nil {
+						addSrcFunc(fn)
+					}
 				}
 			}
 		}

@@ -49,16 +49,22 @@ import (
 //
 // We could add them unexported for now and use them via the linkname hack.
 func AllFunctions(prog *ssa.Program) map[*ssa.Function]bool {
-	return allFunctions(prog, nil)
+	return allFunctions(prog, nil, nil)
 }
 
 // AllFunctionsForPackage finds functions reachable from one package's members
 // and methods, without materializing methods of unrelated imported types.
 func AllFunctionsForPackage(prog *ssa.Program, target *types.Package) map[*ssa.Function]bool {
-	return allFunctions(prog, target)
+	return allFunctions(prog, target, nil)
 }
 
-func allFunctions(prog *ssa.Program, target *types.Package) map[*ssa.Function]bool {
+// AllFunctionsForPackageSource uses source SSA to find interface method wrappers
+// without traversing every type reachable through reflection.
+func AllFunctionsForPackageSource(prog *ssa.Program, target *types.Package, srcFuncs []*ssa.Function) map[*ssa.Function]bool {
+	return allFunctions(prog, target, srcFuncs)
+}
+
+func allFunctions(prog *ssa.Program, target *types.Package, srcFuncs []*ssa.Function) map[*ssa.Function]bool {
 	seen := make(map[*ssa.Function]bool)
 
 	var function func(fn *ssa.Function)
@@ -149,13 +155,26 @@ func allFunctions(prog *ssa.Program, target *types.Package) map[*ssa.Function]bo
 		}
 	}
 
-	// Visit all methods of types for which runtime types were
-	// materialized, as they are reachable through reflection.
-	for _, T := range prog.RuntimeTypes() {
-		if target != nil && !typeBelongsToPackage(T, target) {
-			continue
+	if srcFuncs == nil {
+		// Visit all methods of types for which runtime types were
+		// materialized, as they are reachable through reflection.
+		for _, T := range prog.RuntimeTypes() {
+			if target != nil && !typeBelongsToPackage(T, target) {
+				continue
+			}
+			methodsOf(T)
 		}
-		methodsOf(T)
+	} else {
+		for _, fn := range srcFuncs {
+			function(fn)
+			for _, block := range fn.Blocks {
+				for _, instr := range block.Instrs {
+					if iface, ok := instr.(*ssa.MakeInterface); ok && typeBelongsToPackage(iface.X.Type(), target) {
+						methodsOf(iface.X.Type())
+					}
+				}
+			}
+		}
 	}
 
 	return seen
