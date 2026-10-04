@@ -66,6 +66,27 @@ deliberate unused-parameter finding in each case. This is an incremental golt
 comparison, not a new upstream comparison. The profile uses sampled CPU time,
 which can exceed wall time when analysis runs concurrently.
 
+That first candidate skipped reflection type traversal for every package. It
+can miss wrappers used by reflective method calls. The revised candidate
+`fa8b596e` keeps the full traversal whenever a package declares local methods
+and uses the source-SSA path for packages without local methods. The
+[final paired CI run](https://github.com/smykla-skalski/golt/actions/runs/37229587519)
+measured the revised candidate against the same main commit and command.
+
+| Order | Case | Main | Revised candidate | Change | Main RSS | Candidate RSS |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| Candidate first | Cold analysis | 38.16 s | 37.33 s | 2.2% faster | 6,926 MiB | 6,920 MiB |
+| Main first | Cold analysis | 30.13 s | 29.52 s | 2.0% faster | 6,900 MiB | 6,841 MiB |
+| Candidate first | Warm, no edit | 0.35 s | 0.35 s | unchanged | 151 MiB | 153 MiB |
+| Main first | Warm, no edit | 0.35 s | 0.35 s | unchanged | 170 MiB | 171 MiB |
+| Candidate first | Edited | 10.20 s | 9.54 s | 6.4% faster | 4,986 MiB | 4,732 MiB |
+| Main first | Edited | 8.41 s | 7.54 s | 10.3% faster | 5,047 MiB | 4,282 MiB |
+
+All 36 timed requests again produced identical output and issue counts. The
+unfiltered `unparam` parity check matched main across the same five edit
+types. The revised candidate is the result to use when estimating the change
+to local `make check` lint time.
+
 ## Full Kuma PR: two edited requests
 
 The [full-workload CI run](https://github.com/smykla-skalski/golt/actions/runs/37186325743)
