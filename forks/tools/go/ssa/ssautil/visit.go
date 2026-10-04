@@ -49,6 +49,16 @@ import (
 //
 // We could add them unexported for now and use them via the linkname hack.
 func AllFunctions(prog *ssa.Program) map[*ssa.Function]bool {
+	return allFunctions(prog, nil)
+}
+
+// AllFunctionsForPackage finds functions reachable from one package's members
+// and methods, without materializing methods of unrelated imported types.
+func AllFunctionsForPackage(prog *ssa.Program, target *types.Package) map[*ssa.Function]bool {
+	return allFunctions(prog, target)
+}
+
+func allFunctions(prog *ssa.Program, target *types.Package) map[*ssa.Function]bool {
 	seen := make(map[*ssa.Function]bool)
 
 	var function func(fn *ssa.Function)
@@ -117,6 +127,9 @@ func AllFunctions(prog *ssa.Program) map[*ssa.Function]bool {
 	}
 
 	for _, pkg := range prog.AllPackages() {
+		if target != nil && pkg.Pkg != target {
+			continue
+		}
 		// AllPackages may return partial Members; Package completes them.
 		pkg = prog.Package(pkg.Pkg)
 		for _, mem := range pkg.Members {
@@ -139,10 +152,24 @@ func AllFunctions(prog *ssa.Program) map[*ssa.Function]bool {
 	// Visit all methods of types for which runtime types were
 	// materialized, as they are reachable through reflection.
 	for _, T := range prog.RuntimeTypes() {
+		if target != nil && !typeBelongsToPackage(T, target) {
+			continue
+		}
 		methodsOf(T)
 	}
 
 	return seen
+}
+
+func typeBelongsToPackage(T types.Type, pkg *types.Package) bool {
+	switch T := types.Unalias(T).(type) {
+	case *types.Pointer:
+		return typeBelongsToPackage(T.Elem(), pkg)
+	case *types.Named:
+		return T.Obj().Pkg() == pkg
+	default:
+		return false
+	}
 }
 
 // MainPackages returns the subset of the specified packages
