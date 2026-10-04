@@ -1,7 +1,33 @@
 # Upstream golangci-lint versus golt
 
-For the full Kuma PR workload with all 28 linters and tests enabled, see
+For the full Kuma PR cold and warm single-run results, see
 [the full Kuma PR experiments](kuma-pr-experiments.md).
+
+## Full Kuma PR: two edited requests
+
+The [full-workload CI run](https://github.com/smykla-skalski/golt/actions/runs/37186325743)
+compares upstream v2.14.0 with merged golt main before the `unparam`
+experiment. It uses the pinned Kuma PR #18941 head, `./...`, tests enabled,
+all 28 configured linters, Go 1.27.1, two Go CPUs per process, `GOGC=80`, and
+a 3 GiB Go soft memory limit per process. Two edited requests run serially or
+at once; each order has three repetitions on a separate CI runner. The Go
+build cache is shared and warm for timing samples; analysis caches are separate
+per binary. RSS is the highest sampled aggregate process-tree RSS for a batch.
+
+| Order | Policy | Upstream batch | Golt batch | Golt change | Upstream RSS | Golt RSS |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| Upstream first | Serial | 188.03 s | 20.97 s | 88.8% faster | 4,382 MiB | 2,253 MiB |
+| Golt first | Serial | 210.41 s | 26.94 s | 87.2% faster | 4,371 MiB | 2,267 MiB |
+| Upstream first | Parallel | 294.99 s | 32.67 s | 88.9% faster | 8,679 MiB | 4,923 MiB |
+| Golt first | Parallel | 323.82 s | 34.33 s | 89.4% faster | 8,561 MiB | 4,929 MiB |
+
+The configured workload reported 2,969 issues before filtering and zero final
+issues for both binaries in every request. The CI artifact contains all
+per-request logs and JSON output. Parallel batches were slower than serial
+for both binaries, so heavy edited requests should remain serial. The Go
+memory limit is soft; upstream's two processes exceeded 8 GiB aggregate RSS.
+
+## Three-linter subset
 
 **Compared:** [upstream v2.14.0](https://github.com/golangci/golangci-lint/releases/tag/v2.14.0)
 (`114493f9`) and golt `10a6fe80` for the original four rows; the cold Kuma row

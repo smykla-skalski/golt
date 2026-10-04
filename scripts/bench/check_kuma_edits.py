@@ -73,7 +73,10 @@ def main():
     results = []
     try:
         fixture_file.write_bytes(b"package " + package +
-                                 b"\n\nfunc goltBenchUnusedParam(x int) {}\n")
+                                 b"\n\nvar goltBenchCounter int\n\n"
+                                 b"func goltBenchUnusedParam(x int) int {\n"
+                                 b"\tif goltBenchCounter > 0 { return goltBenchCounter }\n"
+                                 b"\treturn 0\n}\n")
         base_caches = {}
         seed = {}
         for name, binary in binaries.items():
@@ -81,7 +84,9 @@ def main():
             cache.mkdir(parents=True)
             base_caches[name] = cache
             seed[name] = run(binary, workdir, cache, out / f"{name}-seed")
+            print(f"{name} seed: {len(seed[name])} issues", flush=True)
         if seed["main"] != seed["candidate"]:
+            (out / "seed-diff.json").write_text(json.dumps(seed, indent=2) + "\n")
             raise RuntimeError("seed diagnostics differ")
         if not seed["main"]:
             raise RuntimeError("unfiltered unparam seed has no diagnostics")
@@ -103,6 +108,7 @@ def main():
             (out / "results.json").write_text(json.dumps(results, indent=2) + "\n")
             print(json.dumps(result), flush=True)
             if not result["match"]:
+                (out / f"{case}-diff.json").write_text(json.dumps(issues, indent=2) + "\n")
                 raise RuntimeError(f"{case}: diagnostics differ")
             source.write_bytes(original_source)
             module.write_bytes(original_module)
