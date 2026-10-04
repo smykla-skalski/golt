@@ -43,6 +43,7 @@ func runUnparam(pass *analysis.Pass, settings *config.UnparamSettings) error {
 	c.CheckExportedFuncs(settings.CheckExported)
 	c.Packages([]*packages.Package{pkg})
 	c.ProgramSSA(ssaPkg.Prog)
+	c.SourceFunctions(ssa.SrcFuncs)
 
 	unparamIssues, err := c.Check()
 	if err != nil {

@@ -11,6 +11,14 @@ on:
         description: Baseline git ref (default is upstream v2.14.0)
         type: string
         default: refs/tags/benchmark-upstream
+      baseline_label:
+        description: Name shown for the baseline in results
+        type: string
+        default: Upstream
+      parity:
+        description: Compare unfiltered unparam diagnostics across Kuma edits
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -89,12 +97,14 @@ jobs:
       - name: Compare local make-check lint command
         env:
           ORDER: ${{ matrix.order }}
+          BASELINE_LABEL: ${{ inputs.baseline_label || 'Upstream' }}
         run: |
           python3 scripts/bench/kuma_make_check.py \
             --upstream-bin dist/bench/bin/upstream \
             --golt-bin dist/bench/bin/fork \
             --workdir dist/bench/workload \
             --out dist/bench/make-check \
+            --baseline-label "$BASELINE_LABEL" \
             --order "$ORDER"
           cat dist/bench/make-check/summary.md >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -161,5 +171,46 @@ jobs:
         with:
           name: kuma-make-check-profile
           path: dist/bench/make-check-profile/output
+          if-no-files-found: warn
+          retention-days: 30
+
+  parity:
+    if: ${{ inputs.parity }}
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: 1.27.1
+          cache: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: kuma-make-check-binaries
+          path: dist/bench/bin
+      - name: Prepare pinned Kuma checkout
+        run: |
+          chmod +x dist/bench/bin/fork dist/bench/bin/upstream
+          git clone --filter=blob:none --no-checkout \
+            https://github.com/kumahq/kuma.git dist/bench/workload
+          git -C dist/bench/workload fetch --depth=1 origin \
+            c993a12399b6b19dcc66c515208fdba6af1c45e5
+          git -C dist/bench/workload checkout --detach \
+            c993a12399b6b19dcc66c515208fdba6af1c45e5
+      - name: Compare unparam diagnostics across edits
+        run: |
+          python3 scripts/bench/check_kuma_edits.py \
+            --main-bin dist/bench/bin/upstream \
+            --candidate-bin dist/bench/bin/fork \
+            --workdir dist/bench/workload \
+            --out dist/bench/parity
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: kuma-make-check-parity
+          path: dist/bench/parity/*.json
           if-no-files-found: warn
           retention-days: 30

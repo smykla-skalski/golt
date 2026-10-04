@@ -49,8 +49,9 @@ func UnusedParams(tests, exported, debug bool, args ...string) ([]string, error)
 // UnusedParams instead, unless you want to use a *loader.Program and
 // *ssa.Program directly.
 type Checker struct {
-	pkgs []*packages.Package
-	prog *ssa.Program
+	pkgs     []*packages.Package
+	prog     *ssa.Program
+	srcFuncs []*ssa.Function
 
 	wd string
 
@@ -157,6 +158,11 @@ func (c *Checker) ProgramSSA(prog *ssa.Program) {
 	c.prog = prog
 }
 
+// SourceFunctions supplies functions already discovered by buildssa.
+func (c *Checker) SourceFunctions(funcs []*ssa.Function) {
+	c.srcFuncs = funcs
+}
+
 // CheckExportedFuncs sets whether to inspect exported functions
 func (c *Checker) CheckExportedFuncs(exported bool) {
 	c.exported = exported
@@ -255,7 +261,13 @@ func (c *Checker) Check() ([]Issue, error) {
 	}
 	allFuncs := make(map[*ssa.Function]bool)
 	for _, pkg := range c.pkgs {
-		for fn := range ssautil.AllFunctionsForPackage(c.prog, pkg.Types) {
+		var found map[*ssa.Function]bool
+		if c.srcFuncs != nil {
+			found = ssautil.AllFunctionsForPackageSource(c.prog, pkg.Types, c.srcFuncs)
+		} else {
+			found = ssautil.AllFunctionsForPackage(c.prog, pkg.Types)
+		}
+		for fn := range found {
 			allFuncs[fn] = true
 		}
 	}
@@ -274,11 +286,17 @@ func (c *Checker) Check() ([]Issue, error) {
 			addSrcFunc(anon)
 		}
 	}
-	for _, pkg := range c.pkgs {
-		for _, def := range pkg.TypesInfo.Defs {
-			if def, ok := def.(*types.Func); ok {
-				if fn := c.prog.FuncValue(def); fn != nil {
-					addSrcFunc(fn)
+	if c.srcFuncs != nil {
+		for _, fn := range c.srcFuncs {
+			addSrcFunc(fn)
+		}
+	} else {
+		for _, pkg := range c.pkgs {
+			for _, def := range pkg.TypesInfo.Defs {
+				if def, ok := def.(*types.Func); ok {
+					if fn := c.prog.FuncValue(def); fn != nil {
+						addSrcFunc(fn)
+					}
 				}
 			}
 		}

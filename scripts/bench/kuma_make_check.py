@@ -89,6 +89,7 @@ def main():
     parser.add_argument("--workdir", type=Path, required=True)
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--order", choices=("upstream-first", "golt-first"), required=True)
+    parser.add_argument("--baseline-label", default="Upstream")
     parser.add_argument("--runs", type=int, default=3)
     args = parser.parse_args()
     if args.runs < 1:
@@ -136,7 +137,7 @@ def main():
 
     (output / "results.json").write_text(json.dumps(records, indent=2) + "\n")
     lines = [
-        "| Case | Upstream | Golt | Golt change | Upstream peak RSS | Golt peak RSS |",
+        f"| Case | {args.baseline_label} | Golt | Golt change | {args.baseline_label} peak RSS | Golt peak RSS |",
         "| --- | ---: | ---: | ---: | ---: | ---: |",
     ]
     for case in ("cold-analysis", "warm-no-edit", "edited"):
