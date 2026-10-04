@@ -41,7 +41,8 @@ repetitions.
 
 Measured results: [upstream versus golt](upstream-vs-golt-results.md).
 
-Dispatch `Kuma make check lint benchmark` for the local Go lint step in
+The [measured results](upstream-vs-golt-results.md#kuma-local-make-check-lint-step)
+come from `Kuma make check lint benchmark`. Dispatch it for the local Go lint step in
 Kuma's `make check`. It compares upstream v2.14.0 and golt on pinned Kuma
 `c993a123` with the root `.golangci.yml`. Each invocation runs exactly
 `CGO_ENABLED=0 GOMEMLIMIT=7GiB golangci-lint run --timeout=10m -v` from the

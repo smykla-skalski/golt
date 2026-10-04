@@ -1,8 +1,6 @@
 name: Kuma make check lint benchmark
 
 on:
-  push:
-    branches: [perf/kuma-make-check-lint]
   workflow_dispatch:
 
 permissions:

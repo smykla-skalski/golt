@@ -1,5 +1,42 @@
 # Upstream golangci-lint versus golt
 
+## Kuma local `make check` lint step
+
+The [CI comparison](https://github.com/smykla-skalski/golt/actions/runs/37224150227)
+replays the Go lint recipe from Kuma's local `make check` on pinned Kuma
+`c993a123`: `CGO_ENABLED=0 GOMEMLIMIT=7GiB golangci-lint run --timeout=10m -v`.
+It uses upstream v2.14.0 and golt `961b135e`, Go 1.27.1, the root config's
+28 linters, tests enabled, and no benchmark-imposed CPU cap or `GOGC` value.
+Each row is the median of three single-invocation samples per binary. The
+two binary orders ran on separate Ubuntu 24.04 runners. RSS is the highest
+sampled process-tree RSS in the three runs. A preliminary run warmed the shared
+Go build cache; each binary used a separate lint cache. Cold analysis clears
+that lint cache, warm no-edit repeats the clean source, and edited appends a
+new comment to a Go file after seeding the cache.
+
+| Order | Case | Upstream | Golt | Golt change | Upstream RSS | Golt RSS |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| Golt first | Cold analysis | 78.82 s | 30.96 s | 60.7% faster | 7,185 MiB | 6,905 MiB |
+| Upstream first | Cold analysis | 101.60 s | 40.35 s | 60.3% faster | 7,163 MiB | 6,825 MiB |
+| Golt first | Warm, no edit | 3.13 s | 0.36 s | 88.6% faster | 360 MiB | 166 MiB |
+| Upstream first | Warm, no edit | 4.04 s | 0.39 s | 90.4% faster | 351 MiB | 151 MiB |
+| Golt first | Edited | 42.91 s | 8.57 s | 80.0% faster | 7,050 MiB | 5,286 MiB |
+| Upstream first | Edited | 56.02 s | 11.18 s | 80.0% faster | 7,086 MiB | 5,123 MiB |
+
+All 36 timed requests exited successfully with identical output and 2,969
+issues before filtering, zero afterwards. No request modified the checkout,
+despite Kuma's `issues.fix: true` setting. The full `make check` also runs
+format generators and other lint targets; this table measures its Go lint
+recipe only. Kuma's CI lint action differs: it passes `--fix=false` and sets
+`GOGC=80`. The command is exact, but timings are from CI runners rather than
+a developer's Mac. The two orders show runner-dependent absolute times;
+the relative edited improvement was 80.0% in both.
+
+For the edited golt sample, verbose logs report 2.2 seconds in package loading
+and 6.1 seconds in linters; `unparam` accounts for about 5.0 seconds of summed
+analyzer time. Further edited-run work should measure factful analyzer cache
+reuse and profile the remaining analysis before changing the default GC policy.
+
 For the full Kuma PR cold and warm single-run results, see
 [the full Kuma PR experiments](kuma-pr-experiments.md).
 
