@@ -124,8 +124,8 @@ the unprofiled timing samples.
 
 The [edit-parity CI run](https://github.com/smykla-skalski/golt/actions/runs/37190914162)
 compared unfiltered `unparam` JSON diagnostics against merged main after
-comment, function-body, exported-API, build-tag, and `go.mod` edits. A small
-deliberate fixture produced one finding in each case, identical between the
+comment, function-body, exported-API, build-tag, and `go.mod` comment edits.
+A small deliberate fixture produced one finding in each case, identical between the
 two binaries; the pinned Kuma source produced no unfiltered `unparam`
 findings by itself. The fork's upstream test suite, including method and
 closure cases, also passed in CI. The configured full-run prefilter count
