@@ -1,7 +1,54 @@
 # Upstream golangci-lint versus golt
 
-For the full Kuma PR workload with all 28 linters and tests enabled, see
+For the full Kuma PR cold and warm single-run results, see
 [the full Kuma PR experiments](kuma-pr-experiments.md).
+
+## Full Kuma PR: two edited requests
+
+The [full-workload CI run](https://github.com/smykla-skalski/golt/actions/runs/37186325743)
+compares upstream v2.14.0 with merged golt main before the `unparam`
+experiment. It uses the pinned Kuma PR #18941 head, `./...`, tests enabled,
+all 28 configured linters, Go 1.27.1, two Go CPUs per process, `GOGC=80`, and
+a 3 GiB Go soft memory limit per process. Two edited requests run serially or
+at once; each order has three repetitions on a separate CI runner. The Go
+build cache is shared and warm for timing samples; analysis caches are separate
+per binary. RSS is the highest sampled aggregate process-tree RSS for a batch.
+
+| Order | Policy | Upstream batch | Golt batch | Golt change | Upstream RSS | Golt RSS |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| Upstream first | Serial | 188.03 s | 20.97 s | 88.8% faster | 4,382 MiB | 2,253 MiB |
+| Golt first | Serial | 210.41 s | 26.94 s | 87.2% faster | 4,371 MiB | 2,267 MiB |
+| Upstream first | Parallel | 294.99 s | 32.67 s | 88.9% faster | 8,679 MiB | 4,923 MiB |
+| Golt first | Parallel | 323.82 s | 34.33 s | 89.4% faster | 8,561 MiB | 4,929 MiB |
+
+The configured workload reported 2,969 issues before filtering and zero final
+issues for both binaries in every request. The CI artifact contains all
+per-request logs and JSON output. For this two-request setup, serial batches
+were faster and used less memory for both binaries. The Go
+memory limit is soft; upstream's two processes exceeded 8 GiB aggregate RSS.
+
+The [optimized-candidate CI run](https://github.com/smykla-skalski/golt/actions/runs/37188867865)
+repeated the same workload after narrowing `unparam`'s SSA function walk.
+Each row again has three batches per binary and execution order.
+
+| Order | Policy | Upstream batch | Optimized golt batch | Golt change | Upstream RSS | Golt RSS |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| Golt first | Serial | 156.68 s | 15.50 s | 90.1% faster | 4,413 MiB | 2,198 MiB |
+| Upstream first | Serial | 188.81 s | 16.78 s | 91.1% faster | 4,410 MiB | 2,178 MiB |
+| Golt first | Parallel | 242.24 s | 19.07 s | 92.1% faster | 8,683 MiB | 4,638 MiB |
+| Upstream first | Parallel | 307.57 s | 25.16 s | 91.8% faster | 8,601 MiB | 4,537 MiB |
+
+The 2,969 prefilter issue count and zero final issues matched in every
+request, as did the final JSON hash. Since the configured run filters every
+issue, [separate unfiltered `unparam` edit checks](kuma-pr-experiments.md#scoping-unparams-ssa-function-walk)
+also compared diagnostics across five edit types with a deliberate finding.
+
+These are complete-product comparisons. Run-to-run variation means the two
+tables do not isolate the SSA change. The paired main-versus-candidate edit
+benchmark found the candidate 20.4–25.1% faster with lower RSS; see
+[the Kuma experiments](kuma-pr-experiments.md#scoping-unparams-ssa-function-walk).
+
+## Three-linter subset
 
 **Compared:** [upstream v2.14.0](https://github.com/golangci/golangci-lint/releases/tag/v2.14.0)
 (`114493f9`) and golt `10a6fe80` for the original four rows; the cold Kuma row
@@ -102,9 +149,9 @@ upstream-versus-golt comparison.
 
 The 4.250-second cold Kuma API number above excludes that expensive Go build
 cache miss and analyzes a much smaller package set. “Cold” in the table refers
-only to the golangci-lint analysis cache. Use the full-repository CI jobs to
-estimate Kuma PR latency.
+only to the golangci-lint analysis cache. Use the controlled full Kuma tables
+above for edited local requests; the Kuma PR jobs show the cache-miss CI case.
 
-Source revisions: [cache-buster `1ed2641`](https://github.com/Automaat/cache-buster/commit/1ed2641a75cb424a592fa3eddf76da32180e7ed4)
+Three-linter subset source revisions: [cache-buster `1ed2641`](https://github.com/Automaat/cache-buster/commit/1ed2641a75cb424a592fa3eddf76da32180e7ed4)
 and [Kuma `12fbf5f`](https://github.com/kumahq/kuma/commit/12fbf5f561e00b5f71eb5e72dc82e1a9eb4f9e87).
 The CI runs link to raw timing and compatibility artifacts.

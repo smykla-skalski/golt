@@ -245,3 +245,5 @@ replace golang.org/x/tools => ./forks/tools
 replace honnef.co/go/tools => ./forks/go-tools
 
 replace github.com/golangci/revgrep => ./forks/revgrep
+
+replace mvdan.cc/unparam => ./forks/unparam

@@ -1,0 +1,51 @@
+# Methods of unexported types are only seen by ssautil.AllFunctions when
+# reachable via an exported type or an interface. We must still see their
+# bodies, both to find call sites and to check their own parameters.
+# See https://github.com/mvdan/unparam/issues/91.
+! exec unparam -tests .
+cmp stdout stdout.golden
+
+-- go.mod --
+module testdata.tld/foo
+-- stdout.golden --
+foo.go:13:27: (*fooType).Run$1 - unusedParam is unused
+foo.go:21:29: (*fooType).oneUnused - a is unused
+-- foo.go --
+package foo
+
+type fooType struct {
+	version string
+}
+
+func NewFooType(version string) *fooType {
+	return &fooType{version: version}
+}
+
+func (f *fooType) Run() string {
+	if f.version != "" {
+		clean := func(s string, unusedParam int) string {
+			return apply(s)
+		}
+		return clean(f.version, 1)
+	}
+	return ""
+}
+
+func (f *fooType) oneUnused(a int) string {
+	return f.version
+}
+
+func apply(version string) string {
+	return "v" + version
+}
+-- foo_test.go --
+package foo
+
+import "testing"
+
+func TestApply(t *testing.T) {
+	_ = apply("0.0.0")
+	_ = apply("0.0.0")
+	_ = apply("0.0.0")
+	_ = apply("0.0.0")
+}

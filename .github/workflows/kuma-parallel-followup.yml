@@ -1,0 +1,294 @@
+name: Full Kuma parallel follow-up
+
+on:
+  push:
+    branches: [perf/kuma-parallel-followup]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: kuma-parallel-followup-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: github.repository == 'smykla-skalski/golt'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: 1.27.1
+          cache: false
+      - name: Test scoped unparam traversal
+        run: |
+          go test ./pkg/golinters/unparam
+          (cd forks/tools && go test ./go/ssa/ssautil)
+          (cd forks/unparam && go test ./...)
+      - name: Build upstream v2.14.0 and merged golt
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          git fetch --no-tags https://github.com/golangci/golangci-lint.git \
+            refs/tags/v2.14.0:refs/tags/benchmark-upstream
+          go run ./scripts/bench/build_pair \
+            --candidate-ref HEAD \
+            --upstream-ref refs/tags/benchmark-upstream \
+            --baseline-mode exact \
+            --out-dir dist/bench/bin \
+            --build-timeout 15m \
+            --max-memory-mib 4096 \
+            --go-max-procs 4 \
+            --nice 10
+      - name: Build merged main and candidate
+        run: |
+          go run ./scripts/bench/build_pair \
+            --candidate-ref HEAD \
+            --upstream-ref origin/main \
+            --baseline-mode exact \
+            --out-dir dist/bench/main-pair \
+            --build-timeout 15m \
+            --max-memory-mib 4096 \
+            --go-max-procs 4 \
+            --nice 10
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: github.event_name == 'workflow_dispatch'
+        with:
+          name: kuma-parallel-binaries
+          path: dist/bench/bin
+          if-no-files-found: error
+          retention-days: 1
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: kuma-main-pair
+          path: dist/bench/main-pair
+          if-no-files-found: error
+          retention-days: 1
+
+  compare:
+    if: github.event_name == 'workflow_dispatch'
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        order: [upstream-first, golt-first]
+    name: Two full Kuma requests (${{ matrix.order }})
+    env:
+      GOGC: '80'
+      GOLT_WORKFLOW_PACKAGES: ./...
+      GOLT_WORKFLOW_EDIT_FILE: api/system/v1alpha1/datasource_helpers.go
+      GOLT_WORKFLOW_MEMORY_LIMIT: 3072MiB
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: 1.27.1
+          cache: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: kuma-parallel-binaries
+          path: dist/bench/bin
+      - name: Prepare pinned full Kuma workload
+        run: |
+          chmod +x dist/bench/bin/fork dist/bench/bin/upstream
+          git clone --filter=blob:none --no-checkout \
+            https://github.com/kumahq/kuma.git dist/bench/workload
+          git -C dist/bench/workload fetch --depth=1 origin \
+            347bfd9022c6f9b074b0cd027e03233a429f32fd
+          git -C dist/bench/workload checkout --detach \
+            347bfd9022c6f9b074b0cd027e03233a429f32fd
+      - name: Compare serial and overlapping edited requests
+        env:
+          GOLT_WORKFLOW_CONFIG: ${{ github.workspace }}/dist/bench/workload/.golangci.yml
+          ORDER: ${{ matrix.order }}
+        run: |
+          python3 scripts/bench/compare_parallel.py \
+            --upstream-bin dist/bench/bin/upstream \
+            --golt-bin dist/bench/bin/fork \
+            --workdir dist/bench/workload \
+            --out dist/bench/full-parallel \
+            --profile kuma-pr \
+            --binary-order "$ORDER" \
+            --repetitions 3
+          cat dist/bench/full-parallel/summary.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: kuma-parallel-${{ matrix.order }}
+          path: |
+            dist/bench/bin/pair.json
+            dist/bench/full-parallel/*.json
+            dist/bench/full-parallel/*.md
+            dist/bench/full-parallel/*.stdout
+            dist/bench/full-parallel/*.stderr
+          if-no-files-found: warn
+          retention-days: 30
+
+  profile:
+    if: github.event_name == 'workflow_dispatch'
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    env:
+      GOGC: '80'
+      GOMEMLIMIT: 3072MiB
+      GOMAXPROCS: '2'
+      GOFLAGS: -p=2
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: 1.27.1
+          cache: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: kuma-parallel-binaries
+          path: dist/bench/bin
+      - name: Profile golt after a dependency edit
+        run: |
+          chmod +x dist/bench/bin/fork
+          git clone --filter=blob:none --no-checkout \
+            https://github.com/kumahq/kuma.git dist/bench/workload
+          git -C dist/bench/workload fetch --depth=1 origin \
+            347bfd9022c6f9b074b0cd027e03233a429f32fd
+          git -C dist/bench/workload checkout --detach \
+            347bfd9022c6f9b074b0cd027e03233a429f32fd
+          mkdir -p dist/bench/full-profile/cache dist/bench/full-profile/output
+          binary="$GITHUB_WORKSPACE/dist/bench/bin/fork"
+          profile="$GITHUB_WORKSPACE/dist/bench/full-profile/output/edit.cpu.pprof"
+          (cd dist/bench/workload && \
+            GOLANGCI_LINT_CACHE="$GITHUB_WORKSPACE/dist/bench/full-profile/cache" \
+            "$binary" run --concurrency=2 --timeout=20m --tests=true \
+              --issues-exit-code=0 --config=.golangci.yml ./... \
+              > "$GITHUB_WORKSPACE/dist/bench/full-profile/output/seed.stdout" \
+              2> "$GITHUB_WORKSPACE/dist/bench/full-profile/output/seed.stderr")
+          printf '\n// golt edited profile\n' >> \
+            dist/bench/workload/api/system/v1alpha1/datasource_helpers.go
+          (cd dist/bench/workload && \
+            GOLANGCI_LINT_CACHE="$GITHUB_WORKSPACE/dist/bench/full-profile/cache" \
+            "$binary" run -v --concurrency=2 --timeout=20m --tests=true \
+              --issues-exit-code=0 --config=.golangci.yml \
+              --cpu-profile-path="$profile" ./... \
+              > "$GITHUB_WORKSPACE/dist/bench/full-profile/output/edit.stdout" \
+              2> "$GITHUB_WORKSPACE/dist/bench/full-profile/output/edit.stderr")
+          go tool pprof -top -cum -nodecount=30 "$binary" "$profile" \
+            > dist/bench/full-profile/output/cpu-top.txt
+          cat dist/bench/full-profile/output/cpu-top.txt >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: kuma-parallel-profile
+          path: dist/bench/full-profile/output
+          if-no-files-found: warn
+          retention-days: 30
+
+  edit-comparison:
+    if: github.event_name == 'workflow_dispatch'
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        order: [fork-first, upstream-first]
+    name: Edited Kuma main comparison (${{ matrix.order }})
+    env:
+      GOGC: '80'
+      GOMEMLIMIT: 3072MiB
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: 1.27.1
+          cache: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: kuma-main-pair
+          path: dist/bench/main-pair
+      - name: Compare edited runs with merged main
+        env:
+          ORDER: ${{ matrix.order }}
+        run: |
+          chmod +x dist/bench/main-pair/fork dist/bench/main-pair/upstream
+          go run ./scripts/bench/baseline \
+            --manifest scripts/bench/kuma-pr.json \
+            --fork-bin dist/bench/main-pair/fork \
+            --upstream-bin dist/bench/main-pair/upstream \
+            --binary-order "$ORDER" \
+            --out "results/$ORDER" \
+            --workload kuma-pr \
+            --scenario configured \
+            --concurrency 2 \
+            --cache-mode edit \
+            --runs 3 \
+            --prepare=true \
+            --isolate-go-build-cache \
+            --run-timeout 20m \
+            --max-rss-mib 8192 \
+            --go-max-procs 2 \
+            --nice 10
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: kuma-main-edit-${{ matrix.order }}
+          path: |
+            results
+            !results/**/workloads/**
+            !results/**/cache/**
+            !results/**/go-build/**
+          if-no-files-found: warn
+          retention-days: 30
+
+  edit-parity:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: 1.27.1
+          cache: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: kuma-main-pair
+          path: dist/bench/main-pair
+      - name: Compare unfiltered diagnostics across edit types
+        run: |
+          chmod +x dist/bench/main-pair/fork dist/bench/main-pair/upstream
+          git clone --filter=blob:none --no-checkout \
+            https://github.com/kumahq/kuma.git dist/bench/workload
+          git -C dist/bench/workload fetch --depth=1 origin \
+            347bfd9022c6f9b074b0cd027e03233a429f32fd
+          git -C dist/bench/workload checkout --detach \
+            347bfd9022c6f9b074b0cd027e03233a429f32fd
+          python3 scripts/bench/check_kuma_edits.py \
+            --main-bin dist/bench/main-pair/upstream \
+            --candidate-bin dist/bench/main-pair/fork \
+            --workdir dist/bench/workload \
+            --out dist/bench/edit-parity
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: kuma-edit-parity
+          path: |
+            dist/bench/edit-parity/*.json
+            dist/bench/edit-parity/*.stdout
+            dist/bench/edit-parity/*.stderr
+          if-no-files-found: warn
+          retention-days: 30

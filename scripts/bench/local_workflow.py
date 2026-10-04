@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import signal
 import statistics
 import subprocess
@@ -56,17 +57,14 @@ def start(
         env["GOLT_DAEMON_IDLE"] = "20s"
     else:
         env.pop("GOLT_DAEMON", None)
-    args = [
-        str(binary),
-        "run",
-        "--no-config",
-        "--default=none",
-        "--enable-only=" + ",".join(linters),
-        "--concurrency",
-        str(concurrency),
-        "--show-stats=false",
-        "--output.json.path=stdout",
-    ]
+    args = [str(binary), "run"]
+    config = os.environ.get("GOLT_WORKFLOW_CONFIG")
+    if config:
+        args.append("--config=" + config)
+        args.append("-v")
+    else:
+        args.extend(("--no-config", "--default=none", "--enable-only=" + ",".join(linters)))
+    args.extend(("--concurrency", str(concurrency), "--show-stats=false", "--output.json.path=stdout"))
     if runner_mode == "parallel":
         args.append("--allow-parallel-runners")
     if request_key:
@@ -100,7 +98,7 @@ def diagnostics_from_file(path):
             issue["Pos"]["Line"],
             issue["Text"],
         )
-        for issue in report["Issues"]
+        for issue in report["Issues"] or []
     )
 
 
@@ -122,6 +120,10 @@ def finish(task, cancelled=False):
         "diagnostic_sha256": digest,
         "stdout_sha256": hashlib.sha256(data).hexdigest(),
     }
+    if os.environ.get("GOLT_WORKFLOW_CONFIG"):
+        log = task["stderr_path"].read_text(errors="replace")
+        match = re.search(r"Issues before processing: (\d+), after processing: (\d+)", log)
+        result["issue_counts"] = tuple(map(int, match.groups())) if match else None
     if digest is None and not cancelled:
         result["stdout_preview"] = repr(data[:300])
         result["stderr_preview"] = repr(task["stderr_path"].read_bytes()[:300])
@@ -144,6 +146,7 @@ def run_batch(
     linter_groups=None,
     timeout=90,
     cache_dir=None,
+    max_total_rss=MAX_TOTAL_RSS,
 ):
     pending = list(range(requests))
     active = []
@@ -194,7 +197,7 @@ def run_batch(
             task["peak_rss"] = max(task["peak_rss"], current)
             total += current
         peak_total_rss = max(peak_total_rss, total)
-        if total > MAX_TOTAL_RSS:
+        if total > max_total_rss:
             for task in active:
                 os.killpg(task["process"].pid, signal.SIGKILL)
                 task["process"].wait()

@@ -64,6 +64,15 @@ binary order, use isolated per-binary analysis caches, compare diagnostics,
 and report median batch makespan plus maximum aggregate process-tree RSS.
 Raw requests and build metadata are uploaded as CI artifacts.
 
+Dispatch `Full Kuma parallel follow-up` to compare upstream v2.14.0 and golt
+on the pinned full Kuma PR workload: 28 linters, tests, and `./...` under Go
+1.27.1. It measures two edited requests both serially and concurrently in
+both binary orders, with three repetitions, a 3 GiB Go soft memory limit per
+process, and a 10 GiB aggregate RSS stop. The same workflow compares an
+experimental branch with merged main, captures a separate edited CPU profile,
+and checks unfiltered `unparam` diagnostics across five edit types. Timing
+and profile jobs run only on manual dispatch; branch pushes run parity checks.
+
 The script use [Hyperfine](https://github.com/sharkdp/hyperfine) to benchmark the command line of golangci-lint.
 
 ## Reproducible baseline

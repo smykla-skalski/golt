@@ -1,3 +1,4 @@
 golang.org/x/tools v0.50.0 forks/tools https://go.googlesource.com/tools
 honnef.co/go/tools v0.8.1 forks/go-tools https://github.com/dominikh/go-tools
 github.com/golangci/revgrep v0.8.0 forks/revgrep https://github.com/golangci/revgrep
+mvdan.cc/unparam v0.0.0-20260823230713-2fa3d841b0c8 forks/unparam https://github.com/mvdan/unparam
