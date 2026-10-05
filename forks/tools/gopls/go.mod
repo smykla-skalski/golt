@@ -4,7 +4,7 @@ go 1.27.0
 
 require (
 	github.com/fatih/gomodifytags v1.17.1-0.20250423142747-f3939df9aa3c
-	github.com/fsnotify/fsnotify v1.9.0
+	github.com/fsnotify/fsnotify v1.10.1
 	github.com/google/go-cmp v0.7.0
 	github.com/google/jsonschema-go v0.4.3
 	github.com/jba/templatecheck v0.7.1
