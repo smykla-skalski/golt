@@ -1,6 +1,6 @@
 module ginkgolinter
 
-go 1.26.0
+go 1.27.1
 
 require (
 	github.com/onsi/ginkgo/v2 v2.33.0
