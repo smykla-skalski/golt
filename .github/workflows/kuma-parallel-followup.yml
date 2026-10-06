@@ -56,14 +56,14 @@ jobs:
             --max-memory-mib 4096 \
             --go-max-procs 4 \
             --nice 10
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: github.event_name == 'workflow_dispatch'
         with:
           name: kuma-parallel-binaries
           path: dist/bench/bin
           if-no-files-found: error
           retention-days: 1
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: kuma-main-pair
           path: dist/bench/main-pair
@@ -93,7 +93,7 @@ jobs:
         with:
           go-version: 1.27.1
           cache: false
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: kuma-parallel-binaries
           path: dist/bench/bin
@@ -120,7 +120,7 @@ jobs:
             --binary-order "$ORDER" \
             --repetitions 3
           cat dist/bench/full-parallel/summary.md >> "$GITHUB_STEP_SUMMARY"
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:
           name: kuma-parallel-${{ matrix.order }}
@@ -151,7 +151,7 @@ jobs:
         with:
           go-version: 1.27.1
           cache: false
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: kuma-parallel-binaries
           path: dist/bench/bin
@@ -185,7 +185,7 @@ jobs:
           go tool pprof -top -cum -nodecount=30 "$binary" "$profile" \
             > dist/bench/full-profile/output/cpu-top.txt
           cat dist/bench/full-profile/output/cpu-top.txt >> "$GITHUB_STEP_SUMMARY"
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:
           name: kuma-parallel-profile
@@ -214,7 +214,7 @@ jobs:
         with:
           go-version: 1.27.1
           cache: false
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: kuma-main-pair
           path: dist/bench/main-pair
@@ -240,7 +240,7 @@ jobs:
             --max-rss-mib 8192 \
             --go-max-procs 2 \
             --nice 10
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:
           name: kuma-main-edit-${{ matrix.order }}
@@ -264,7 +264,7 @@ jobs:
         with:
           go-version: 1.27.1
           cache: false
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: kuma-main-pair
           path: dist/bench/main-pair
@@ -282,7 +282,7 @@ jobs:
             --candidate-bin dist/bench/main-pair/fork \
             --workdir dist/bench/workload \
             --out dist/bench/edit-parity
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:
           name: kuma-edit-parity
