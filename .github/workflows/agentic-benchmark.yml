@@ -70,3 +70,58 @@ jobs:
             dist/bench/agentic/*.stderr
           if-no-files-found: warn
           retention-days: 14
+
+  full-kuma:
+    if: github.repository == 'smykla-skalski/golt'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      GOLT_WORKFLOW_CONFIG: .golangci.yml
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: 1.27.1
+          cache: false
+
+      - name: Build linter
+        env:
+          GOMAXPROCS: '2'
+          GOMEMLIMIT: 1024MiB
+          GOFLAGS: -p=2
+        run: |
+          mkdir -p dist/bench
+          go build -o dist/bench/golangci-lint ./cmd/golangci-lint
+
+      - name: Prepare pinned worktrees
+        run: |
+          git clone --filter=blob:none https://github.com/kumahq/kuma.git dist/bench/kuma-a
+          git -C dist/bench/kuma-a checkout --detach 347bfd9022c6f9b074b0cd027e03233a429f32fd
+          git clone --local dist/bench/kuma-a dist/bench/kuma-b
+
+      - name: Compare full Kuma policies
+        run: |
+          python3 scripts/bench/agentic_ci.py \
+            --binary dist/bench/golangci-lint \
+            --kuma dist/bench/kuma-a \
+            --kuma-copy dist/bench/kuma-b \
+            --out dist/bench/agentic-full \
+            --repetitions 2 \
+            --full-kuma
+          cat dist/bench/agentic-full/summary.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: agentic-full-kuma
+          path: |
+            dist/bench/agentic-full/*.json
+            dist/bench/agentic-full/*.md
+            dist/bench/agentic-full/*.stdout
+            dist/bench/agentic-full/*.stderr
+          if-no-files-found: warn
+          retention-days: 14

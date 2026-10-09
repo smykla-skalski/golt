@@ -15,18 +15,21 @@ MAX_RSS = 3 * 1024**3
 LINTERS = ["govet", "staticcheck", "unused"]
 
 
-def request(binary, output, label, name, workdir, cache, gc="default", gogc=None):
+def request(binary, output, label, name, workdir, cache, gc="default", gogc=None,
+            full_kuma=False):
     is_kuma = name.startswith("kuma")
     extra_env = {"GOGC": gogc} if gogc else {"GOGC": ""}
     return start(
         binary, workdir, output, label, LINTERS, 2, gc,
-        cache_dir=cache, packages="./api/..." if is_kuma else "./...",
-        tests=not is_kuma, memory_limit="768MiB" if is_kuma else "512MiB",
+        cache_dir=cache, packages="./..." if full_kuma or not is_kuma else "./api/...",
+        tests=full_kuma or not is_kuma,
+        memory_limit="3GiB" if full_kuma else ("768MiB" if is_kuma else "512MiB"),
         extra_env=extra_env,
     )
 
 
-def run_policy(binary, output, label, workdirs, cache, weights, capacity, gc="default", gogc=None):
+def run_policy(binary, output, label, workdirs, cache, weights, capacity, gc="default",
+               gogc=None, full_kuma=False):
     pending = list(workdirs)
     active = []
     results = {}
@@ -40,7 +43,8 @@ def run_policy(binary, output, label, workdirs, cache, weights, capacity, gc="de
                 if used + weights[name] > capacity:
                     continue
                 pending.remove(name)
-                task = request(binary, output, f"{label}-{name}", name, workdirs[name], cache, gc, gogc)
+                task = request(binary, output, f"{label}-{name}", name, workdirs[name],
+                               cache, gc, gogc, full_kuma)
                 active.append((name, task))
                 used += weights[name]
             total = 0
@@ -49,7 +53,7 @@ def run_policy(binary, output, label, workdirs, cache, weights, capacity, gc="de
                 task["peak_rss"] = max(task["peak_rss"], rss)
                 total += rss
             peak = max(peak, total)
-            if total > MAX_RSS:
+            if total > (10 * 1024**3 if full_kuma else MAX_RSS):
                 raise MemoryError(f"{label} exceeded aggregate RSS ceiling: {total}")
             for name, task in active[:]:
                 if task["process"].poll() is None:
@@ -60,8 +64,9 @@ def run_policy(binary, output, label, workdirs, cache, weights, capacity, gc="de
                 if result["exit_code"] not in (0, 1) or result["diagnostic_sha256"] is None:
                     raise RuntimeError(f"{label}: {result}")
                 results[name] = result
-            if time.monotonic() - started > 300:
-                raise TimeoutError(f"{label} exceeded 300 seconds")
+            timeout = 1200 if full_kuma else 300
+            if time.monotonic() - started > timeout:
+                raise TimeoutError(f"{label} exceeded {timeout} seconds")
             time.sleep(0.05)
     finally:
         for _, task in active:
@@ -85,27 +90,82 @@ def check_diagnostics(row, expected):
             raise RuntimeError(f"{row['case']}: diagnostics changed for {name}")
 
 
+def run_full_kuma(binary, output, workdirs, originals, cache, repetitions):
+    heavy = {name: workdirs[name] for name in originals}
+    expected = {}
+    counts = {}
+    records = []
+    for name, workdir in heavy.items():
+        seed = run_policy(binary, output, f"full-seed-{name}", {name: workdir},
+                          cache, {name: 1}, 1, gogc="80", full_kuma=True)
+        result = seed["requests"][name]
+        expected[name] = result["diagnostic_sha256"]
+        counts[name] = result.get("issue_counts")
+        if counts[name] is None:
+            raise RuntimeError(f"full Kuma issue counts missing for {name}")
+        records.append(seed)
+    policies = (("full-serial", 1), ("full-parallel", 2))
+    for repetition in range(repetitions):
+        for policy, capacity in policies[repetition % 2:] + policies[:repetition % 2]:
+            for path, original in originals.values():
+                path.write_bytes(original + f"\n// agentic CI {policy} {repetition}\n".encode())
+            row = run_policy(binary, output, f"{policy}-r{repetition}", heavy,
+                             cache, {name: 1 for name in heavy}, capacity,
+                             gogc="80", full_kuma=True)
+            check_diagnostics(row, expected)
+            for name, result in row["requests"].items():
+                if result.get("issue_counts") != counts[name]:
+                    raise RuntimeError(f"{row['case']}: issue counts changed for {name}")
+            records.append(row)
+            print(json.dumps(row), flush=True)
+    return records
+
+
+def summarize(output, records, prefixes):
+    (output / "results.json").write_text(json.dumps(records, indent=2) + "\n")
+    lines = ["| Case | Median batch (s) | Peak aggregate RSS (MiB) |",
+             "| --- | ---: | ---: |"]
+    for prefix in prefixes:
+        group = [row for row in records if row["case"] == prefix or row["case"].startswith(prefix + "-r")]
+        median = statistics.median(row["seconds"] for row in group)
+        peak = max(row["peak_rss_mib"] for row in group)
+        lines.append(f"| {prefix} | {median:.2f} | {peak} |")
+        print(f"::notice file=scripts/bench/agentic_ci.py,title=agentic/{prefix}::"
+              f"median {median:.2f}s (range {min(row['seconds'] for row in group):.2f}-"
+              f"{max(row['seconds'] for row in group):.2f}); max aggregate RSS {peak} MiB")
+    summary = "\n".join(lines) + "\n"
+    (output / "summary.md").write_text(summary)
+    print(summary)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--binary", type=Path, required=True)
-    parser.add_argument("--small", type=Path, required=True)
-    parser.add_argument("--small-copy", type=Path, required=True)
+    parser.add_argument("--small", type=Path)
+    parser.add_argument("--small-copy", type=Path)
     parser.add_argument("--kuma", type=Path, required=True)
     parser.add_argument("--kuma-copy", type=Path, required=True)
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--repetitions", type=int, default=2)
+    parser.add_argument("--full-kuma", action="store_true")
     args = parser.parse_args()
     if args.repetitions < 1:
         parser.error("--repetitions must be positive")
+    if not args.full_kuma and (args.small is None or args.small_copy is None):
+        parser.error("--small and --small-copy are required outside full Kuma mode")
     binary = args.binary.resolve()
     output = args.out.resolve()
     output.mkdir(parents=True, exist_ok=True)
     workdirs = {
-        "small-a": args.small.resolve(),
-        "small-b": args.small_copy.resolve(),
         "kuma-a": args.kuma.resolve(),
         "kuma-b": args.kuma_copy.resolve(),
     }
+    if not args.full_kuma:
+        workdirs = {
+            "small-a": args.small.resolve(),
+            "small-b": args.small_copy.resolve(),
+            **workdirs,
+        }
     cache = output / "shared-cache"
     cache.mkdir()
     originals = {}
@@ -115,6 +175,11 @@ def main():
     records = []
     expected = {}
     try:
+        if args.full_kuma:
+            records = run_full_kuma(binary, output, workdirs, originals, cache,
+                                    args.repetitions)
+            summarize(output, records, ("full-serial", "full-parallel"))
+            return
         for name, workdir in workdirs.items():
             seed = run_policy(binary, output, f"seed-{name}", {name: workdir}, cache, {name: 1}, 1)
             expected[name] = seed["requests"][name]["diagnostic_sha256"]
@@ -172,21 +237,9 @@ def main():
         for path, original in originals.values():
             path.write_bytes(original)
 
-    (output / "results.json").write_text(json.dumps(records, indent=2) + "\n")
-    lines = ["| Case | Median batch (s) | Peak aggregate RSS (MiB) |",
-             "| --- | ---: | ---: |"]
-    for prefix in ("serial", "parallel", "two-slots", "weighted", "gc-go-default",
-                   "gc-gogc-80", "gc-golt-fast", "worktree-shared", "worktree-isolated"):
-        group = [row for row in records if row["case"] == prefix or row["case"].startswith(prefix + "-r")]
-        median = statistics.median(row["seconds"] for row in group)
-        peak = max(row["peak_rss_mib"] for row in group)
-        lines.append(f"| {prefix} | {median:.2f} | {peak} |")
-        print(f"::notice file=scripts/bench/agentic_ci.py,title=agentic/{prefix}::"
-              f"median {median:.2f}s (range {min(row['seconds'] for row in group):.2f}-"
-              f"{max(row['seconds'] for row in group):.2f}); max aggregate RSS {peak} MiB")
-    summary = "\n".join(lines) + "\n"
-    (output / "summary.md").write_text(summary)
-    print(summary)
+    summarize(output, records, ("serial", "parallel", "two-slots", "weighted",
+                                "gc-go-default", "gc-gogc-80", "gc-golt-fast",
+                                "worktree-shared", "worktree-isolated"))
 
 
 if __name__ == "__main__":
