@@ -106,6 +106,19 @@ func TestListCache_roundTrip(t *testing.T) {
 	}
 }
 
+func TestListCache_fresh(t *testing.T) {
+	dir := writeTestModule(t)
+	lc, conf := newTestListCache(t, dir)
+	require.False(t, lc.fresh())
+
+	loadAndStore(t, lc, conf)
+	require.True(t, lc.fresh())
+
+	path := filepath.Join(dir, "b", "b.go")
+	require.NoError(t, os.WriteFile(path, []byte("package b\n\nvar B = 2\n"), 0o600))
+	require.False(t, lc.fresh())
+}
+
 func TestListCache_invalidation(t *testing.T) {
 	testCases := []struct {
 		desc   string

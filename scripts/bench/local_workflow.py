@@ -57,6 +57,10 @@ def start(
         env["GOMEMLIMIT"] = memory_limit
     if extra_env:
         env.update(extra_env)
+    if runner_mode == "admission":
+        env["GOLT_ADMISSION"] = "1"
+    else:
+        env.pop("GOLT_ADMISSION", None)
     if daemon:
         env["GOLT_DAEMON"] = "1"
         env["GOLT_DAEMON_IDLE"] = "20s"

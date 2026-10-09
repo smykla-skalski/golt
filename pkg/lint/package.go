@@ -64,6 +64,23 @@ func (l *PackageLoader) Load(ctx context.Context, linters []*linter.Config) (pkg
 	return pkgs, l.filterDuplicatePackages(pkgs), nil
 }
 
+// FreshListCache reports whether package loading can reuse a verified snapshot.
+func (l *PackageLoader) FreshListCache(ctx context.Context, linters []*linter.Config) bool {
+	cacheRoot, _, err := gocache.DefaultDir()
+	if err != nil || cacheRoot == "off" {
+		return false
+	}
+
+	conf := &packages.Config{
+		Mode:       findLoadMode(linters),
+		Tests:      l.cfg.Run.AnalyzeTests,
+		BuildFlags: l.makeBuildFlags(),
+	}
+	lc := newListCache(ctx, cacheRoot, conf, buildArgs(l.args))
+
+	return lc != nil && lc.fresh()
+}
+
 func (l *PackageLoader) loadPackages(ctx context.Context, loadMode packages.LoadMode) ([]*packages.Package, error) {
 	defer func(startedAt time.Time) {
 		l.log.Infof("Go packages loading at mode %s took %s", stringifyLoadMode(loadMode), time.Since(startedAt))

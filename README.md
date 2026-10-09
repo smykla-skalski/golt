@@ -9,6 +9,7 @@ golt is a fork of [golangci-lint](https://github.com/golangci/golangci-lint). It
 - golt keeps a cache of `go list` results. To stop the cache, set `GOLT_LIST_CACHE=0`.
 - `GOLT_DEPS_FACTS=light` or `GOLT_DEPS_FACTS=project` makes cold runs faster. With these values, golt can miss some findings in code that calls dependencies.
 - `GOLT_DAEMON=1` keeps a background process for repeated `run` commands on Linux and macOS.
+- `GOLT_ADMISSION=1` enables experimental machine-wide admission. Runs with a fresh `go list` cache snapshot use one of three slots; other runs use two. The default serial lock remains in use when this is unset.
 
 ## Install
 

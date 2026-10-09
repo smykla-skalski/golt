@@ -102,9 +102,11 @@ type runCommand struct {
 	fileCache *fsutils.FileCache
 	lineCache *fsutils.LineCache
 
-	flock       *flock.Flock
-	requestKey  string
-	stopRequest func()
+	flock           *flock.Flock
+	admissionSlots  []*flock.Flock
+	admissionWeight int
+	requestKey      string
+	stopRequest     func()
 
 	exitCode int
 	exitFn   func(int)
@@ -292,6 +294,17 @@ func (c *runCommand) preRunE(_ *cobra.Command, args []string) (retErr error) {
 
 	if err = initHashSalt(c.log.Child(logutils.DebugKeyGoModSalt), c.buildInfo.Version, c.cfg); err != nil {
 		return fmt.Errorf("failed to init hash salt: %w", err)
+	}
+	if os.Getenv(envAdmission) == "1" && !c.cfg.Run.AllowParallelRunners && c.cfg.Run.AllowSerialRunners {
+		linters, err := c.dbManager.GetOptimizedLinters()
+		if err != nil {
+			return err
+		}
+		c.admissionWeight = admissionHeavyWeight
+		if pkgLoader.FreshListCache(c.cmd.Context(), linters) {
+			c.admissionWeight = admissionLightWeight
+		}
+		c.debugf("Admission weight: %d", c.admissionWeight)
 	}
 
 	if err := c.acquireFileLock(); err != nil {
@@ -602,6 +615,9 @@ func (c *runCommand) acquireFileLock() error {
 		c.debugf("Parallel runners are allowed, no locking")
 		return nil
 	}
+	if os.Getenv(envAdmission) == "1" && c.cfg.Run.AllowSerialRunners {
+		return c.acquireAdmission()
+	}
 
 	stateDir, err := userStateDir()
 	if err != nil {
@@ -668,6 +684,12 @@ func (c *runCommand) fileLockWaitError(ctx context.Context, f *flock.Flock, ok b
 }
 
 func (c *runCommand) releaseFileLock() {
+	if len(c.admissionSlots) != 0 {
+		if err := releaseAdmissionSlots(c.admissionSlots); err != nil {
+			c.debugf("Failed to release admission slots: %s", err)
+		}
+		c.admissionSlots = nil
+	}
 	if c.flock == nil {
 		return
 	}

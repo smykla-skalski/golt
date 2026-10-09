@@ -163,6 +163,21 @@ func (c *listCache) load() ([]*packages.Package, bool) {
 	return pkgs, status == listCacheHit
 }
 
+func (c *listCache) fresh() bool {
+	f, err := os.Open(c.path())
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+
+	var header listCacheHeader
+	if err := gob.NewDecoder(bufio.NewReader(f)).Decode(&header); err != nil {
+		return false
+	}
+
+	return header.Schema == listCacheSchema && header.Snapshot.matches()
+}
+
 func (c *listCache) loadWithStatus() (pkgs []*packages.Package, status string) {
 	f, err := os.Open(c.path())
 	if err != nil {

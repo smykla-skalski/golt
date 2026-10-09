@@ -3,6 +3,7 @@
 import argparse
 import json
 import os
+import re
 import signal
 import statistics
 import time
@@ -16,20 +17,22 @@ LINTERS = ["govet", "staticcheck", "unused"]
 
 
 def request(binary, output, label, name, workdir, cache, gc="default", gogc=None,
-            full_kuma=False):
+            full_kuma=False, runner_mode="parallel"):
     is_kuma = name.startswith("kuma")
     extra_env = {"GOGC": gogc} if gogc else {"GOGC": ""}
+    if runner_mode == "admission":
+        extra_env["GL_DEBUG"] = "exec"
     return start(
         binary, workdir, output, label, LINTERS, 2, gc,
         cache_dir=cache, packages="./..." if full_kuma or not is_kuma else "./api/...",
         tests=full_kuma or not is_kuma,
         memory_limit="3GiB" if full_kuma else ("768MiB" if is_kuma else "512MiB"),
-        extra_env=extra_env,
+        extra_env=extra_env, runner_mode=runner_mode,
     )
 
 
 def run_policy(binary, output, label, workdirs, cache, weights, capacity, gc="default",
-               gogc=None, full_kuma=False):
+               gogc=None, full_kuma=False, runner_mode="parallel"):
     pending = list(workdirs)
     active = []
     results = {}
@@ -44,7 +47,7 @@ def run_policy(binary, output, label, workdirs, cache, weights, capacity, gc="de
                     continue
                 pending.remove(name)
                 task = request(binary, output, f"{label}-{name}", name, workdirs[name],
-                               cache, gc, gogc, full_kuma)
+                               cache, gc, gogc, full_kuma, runner_mode)
                 active.append((name, task))
                 used += weights[name]
             total = 0
@@ -63,6 +66,13 @@ def run_policy(binary, output, label, workdirs, cache, weights, capacity, gc="de
                 completed.append(name)
                 if result["exit_code"] not in (0, 1) or result["diagnostic_sha256"] is None:
                     raise RuntimeError(f"{label}: {result}")
+                if runner_mode == "admission":
+                    log = task["stderr_path"].read_text(errors="replace")
+                    match = re.search(r"Admission weight: (\d+)", log)
+                    expected_weight = 2 if full_kuma or name.startswith("kuma") else 1
+                    if match is None or int(match.group(1)) != expected_weight:
+                        raise RuntimeError(f"{label}: unexpected admission weight for {name}: {match}")
+                    result["admission_weight"] = expected_weight
                 results[name] = result
             timeout = 1200 if full_kuma else 300
             if time.monotonic() - started > timeout:
@@ -104,14 +114,17 @@ def run_full_kuma(binary, output, workdirs, originals, cache, repetitions):
         if counts[name] is None:
             raise RuntimeError(f"full Kuma issue counts missing for {name}")
         records.append(seed)
-    policies = (("full-serial", 1), ("full-parallel", 2))
+    policies = (("full-serial", 1, "parallel"),
+                ("full-parallel", 2, "parallel"),
+                ("full-admission", 2, "admission"))
     for repetition in range(repetitions):
-        for policy, capacity in policies[repetition % 2:] + policies[:repetition % 2]:
+        offset = repetition % len(policies)
+        for policy, capacity, runner_mode in policies[offset:] + policies[:offset]:
             for path, original in originals.values():
                 path.write_bytes(original + f"\n// agentic CI {policy} {repetition}\n".encode())
             row = run_policy(binary, output, f"{policy}-r{repetition}", heavy,
                              cache, {name: 1 for name in heavy}, capacity,
-                             gogc="80", full_kuma=True)
+                             gogc="80", full_kuma=True, runner_mode=runner_mode)
             check_diagnostics(row, expected)
             for name, result in row["requests"].items():
                 if result.get("issue_counts") != counts[name]:
@@ -178,7 +191,7 @@ def main():
         if args.full_kuma:
             records = run_full_kuma(binary, output, workdirs, originals, cache,
                                     args.repetitions)
-            summarize(output, records, ("full-serial", "full-parallel"))
+            summarize(output, records, ("full-serial", "full-parallel", "full-admission"))
             return
         for name, workdir in workdirs.items():
             seed = run_policy(binary, output, f"seed-{name}", {name: workdir}, cache, {name: 1}, 1)
@@ -186,16 +199,20 @@ def main():
             records.append(seed)
 
         policies = (
-            ("serial", {name: 1 for name in workdirs}, 1),
-            ("parallel", {name: 1 for name in workdirs}, 4),
-            ("two-slots", {name: 1 for name in workdirs}, 2),
-            ("weighted", {name: (2 if name.startswith("kuma") else 1) for name in workdirs}, 3),
+            ("serial", {name: 1 for name in workdirs}, 1, "parallel"),
+            ("parallel", {name: 1 for name in workdirs}, 4, "parallel"),
+            ("two-slots", {name: 1 for name in workdirs}, 2, "parallel"),
+            ("weighted", {name: (2 if name.startswith("kuma") else 1) for name in workdirs}, 3, "parallel"),
+            ("native-weighted", {name: 1 for name in workdirs}, 4, "admission"),
         )
         for repetition in range(args.repetitions):
-            for policy, weights, capacity in policies[repetition % 4:] + policies[:repetition % 4]:
+            offset = repetition % len(policies)
+            for policy, weights, capacity, runner_mode in policies[offset:] + policies[:offset]:
                 for name, (path, original) in originals.items():
                     path.write_bytes(original + f"\n// agentic CI {policy} {repetition}\n".encode())
-                row = run_policy(binary, output, f"{policy}-r{repetition}", workdirs, cache, weights, capacity)
+                row = run_policy(binary, output, f"{policy}-r{repetition}",
+                                 workdirs, cache, weights, capacity,
+                                 runner_mode=runner_mode)
                 check_diagnostics(row, expected)
                 records.append(row)
                 print(json.dumps(row), flush=True)
@@ -238,6 +255,7 @@ def main():
             path.write_bytes(original)
 
     summarize(output, records, ("serial", "parallel", "two-slots", "weighted",
+                                "native-weighted",
                                 "gc-go-default", "gc-gogc-80", "gc-golt-fast",
                                 "worktree-shared", "worktree-isolated"))
 
