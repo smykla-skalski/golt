@@ -178,8 +178,12 @@ def main():
     for prefix in ("serial", "parallel", "two-slots", "weighted", "gc-go-default",
                    "gc-gogc-80", "gc-golt-fast", "worktree-shared", "worktree-isolated"):
         group = [row for row in records if row["case"] == prefix or row["case"].startswith(prefix + "-r")]
-        lines.append(f"| {prefix} | {statistics.median(row['seconds'] for row in group):.2f} | "
-                     f"{max(row['peak_rss_mib'] for row in group)} |")
+        median = statistics.median(row["seconds"] for row in group)
+        peak = max(row["peak_rss_mib"] for row in group)
+        lines.append(f"| {prefix} | {median:.2f} | {peak} |")
+        print(f"::notice file=scripts/bench/agentic_ci.py,title=agentic/{prefix}::"
+              f"median {median:.2f}s (range {min(row['seconds'] for row in group):.2f}-"
+              f"{max(row['seconds'] for row in group):.2f}); max aggregate RSS {peak} MiB")
     summary = "\n".join(lines) + "\n"
     (output / "summary.md").write_text(summary)
     print(summary)
