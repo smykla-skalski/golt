@@ -39,7 +39,8 @@ def tree_rss(root):
 
 def start(
     binary, workdir, output, label, linters, concurrency, gc, daemon=False,
-    runner_mode="parallel", request_key=None, cache_dir=None,
+    runner_mode="parallel", request_key=None, cache_dir=None, packages=None,
+    tests=None, memory_limit=None, extra_env=None,
 ):
     env = os.environ.copy()
     env.update(
@@ -52,6 +53,10 @@ def start(
     )
     if cache_dir is not None:
         env["GOLANGCI_LINT_CACHE"] = str(cache_dir)
+    if memory_limit is not None:
+        env["GOMEMLIMIT"] = memory_limit
+    if extra_env:
+        env.update(extra_env)
     if daemon:
         env["GOLT_DAEMON"] = "1"
         env["GOLT_DAEMON_IDLE"] = "20s"
@@ -69,9 +74,9 @@ def start(
         args.append("--allow-parallel-runners")
     if request_key:
         args.append("--request-key=" + request_key)
-    if os.environ.get("GOLT_WORKFLOW_TESTS") == "false":
+    if tests is False or (tests is None and os.environ.get("GOLT_WORKFLOW_TESTS") == "false"):
         args.append("--tests=false")
-    args.append(os.environ.get("GOLT_WORKFLOW_PACKAGES", "./..."))
+    args.append(packages or os.environ.get("GOLT_WORKFLOW_PACKAGES", "./..."))
     stdout = (output / f"{label}.stdout").open("wb")
     stderr = (output / f"{label}.stderr").open("wb")
     process = subprocess.Popen(
