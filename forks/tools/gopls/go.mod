@@ -10,7 +10,7 @@ require (
 	github.com/jba/templatecheck v0.7.1
 	github.com/modelcontextprotocol/go-sdk v1.8.0
 	golang.org/x/mod v0.41.0
-	golang.org/x/net v0.59.0
+	golang.org/x/net v0.60.0
 	golang.org/x/sync v0.23.0
 	golang.org/x/telemetry v0.0.0-20260908163034-4bcc4b2ee518
 	golang.org/x/text v0.42.0
