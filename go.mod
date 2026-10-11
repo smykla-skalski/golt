@@ -82,7 +82,7 @@ require (
 	github.com/jjti/go-spancheck v0.6.5
 	github.com/julz/importas v0.2.0
 	github.com/karamaru-alpha/copyloopvar v1.2.2
-	github.com/kisielk/errcheck v1.20.0
+	github.com/kisielk/errcheck v1.30.0
 	github.com/kkHAIKE/contextcheck v1.1.6
 	github.com/kulti/thelper v0.7.1
 	github.com/kunwardeep/paralleltest v1.0.15
@@ -153,7 +153,7 @@ require (
 	golang.org/x/exp v0.0.0-20250620022241-b7579e27df2b
 	golang.org/x/mod v0.41.0
 	golang.org/x/sys v0.48.0
-	golang.org/x/tools v0.50.0
+	golang.org/x/tools v0.51.0
 	honnef.co/go/tools v0.8.1
 	mvdan.cc/gofumpt v0.12.0
 	mvdan.cc/unparam v0.0.0-20260823230713-2fa3d841b0c8
