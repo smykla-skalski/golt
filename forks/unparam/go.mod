@@ -1,6 +1,6 @@
 module mvdan.cc/unparam
 
-go 1.26.0
+go 1.27.3
 
 replace golang.org/x/tools => ../tools
 
