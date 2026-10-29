@@ -4,7 +4,7 @@
 
 # govim requires a more recent version of vim than is available in most
 # distros, so we build from their base image.
-FROM govim/govim:latest-vim
+FROM govim/govim:latest-vim@sha256:162095d3ebd5a408cee363dbaa5b4b28a281656912ef04d6ce35ae90b036d9c6
 ARG GOVIM_REF
 
 ENV GOPROXY=https://proxy.golang.org GOPATH=/go VIM_FLAVOR=vim
