@@ -32,18 +32,18 @@ steps:
 
   # The govim tests produce a large number of artifacts; tarball/gzip to reduce
   # roundtrips and save space.
-  - name: 'ubuntu'
+  - name: 'ubuntu@sha256:6a06111c3b0a8600feadb270aec771dc239bf407b25625f93f44ab00e11f4d3c'
     volumes:
       - name: artifacts
         path: /artifacts
     args: ['tar', '-czf', 'artifacts.tar.gz', '/artifacts']
 
   # Upload artifacts to GCS.
-  - name: 'gcr.io/cloud-builders/gcloud'
+  - name: 'gcr.io/cloud-builders/gcloud@sha256:114a8a3f347d78125ab539fc46b49999979e8b5f9ddeaf963cc4c5fe6b3c699e'
     args: ['storage', 'cp', 'artifacts.tar.gz', 'gs://${_RESULT_BUCKET}/govim/${BUILD_ID}/artifacts.tar.gz']
 
   # Exit with the actual exit code of the integration tests.
-  - name: 'ubuntu'
+  - name: 'ubuntu@sha256:6a06111c3b0a8600feadb270aec771dc239bf407b25625f93f44ab00e11f4d3c'
     args: ['bash', 'govim_test_result.sh']
 
 # Write build logs to the same bucket as artifacts, so they can be more easily
