@@ -44,7 +44,7 @@ require (
 	github.com/bombsimon/wsl/v4 v4.7.0
 	github.com/bombsimon/wsl/v5 v5.9.0
 	github.com/breml/bidichk v0.3.4
-	github.com/breml/errchkjson v0.4.1
+	github.com/breml/errchkjson v0.4.2
 	github.com/butuzov/ireturn v0.4.1
 	github.com/butuzov/mirror v1.3.3
 	github.com/catenacyber/perfsprint v0.10.1
@@ -63,7 +63,6 @@ require (
 	github.com/godoc-lint/godoc-lint v0.11.4
 	github.com/gofrs/flock v0.13.1
 	github.com/golangci/asciicheck v0.5.0
-	github.com/golangci/canonicalheader v0.0.0-20260928145534-e18e5c5a078f
 	github.com/golangci/dupl v0.0.0-20260401084720-c99c5cf5c202
 	github.com/golangci/go-printf-func-name v0.1.1
 	github.com/golangci/gofmt v0.0.0-20260820135601-e84e05053792
@@ -86,6 +85,7 @@ require (
 	github.com/kkHAIKE/contextcheck v1.1.6
 	github.com/kulti/thelper v0.7.1
 	github.com/kunwardeep/paralleltest v1.0.16
+	github.com/lasiar/canonicalheader v1.1.3
 	github.com/ldez/exptostd v0.4.5
 	github.com/ldez/gomoddirectives v0.10.0
 	github.com/ldez/grignotin v0.10.1
@@ -105,7 +105,7 @@ require (
 	github.com/moricho/tparallel v0.3.2
 	github.com/nakabonne/nestif v0.3.1
 	github.com/nishanths/exhaustive v0.15.0
-	github.com/nishanths/predeclared v0.3.0
+	github.com/nishanths/predeclared v0.3.1
 	github.com/nunnatsa/ginkgolinter v0.24.0
 	github.com/pelletier/go-toml/v2 v2.4.3
 	github.com/quasilyte/go-ruleguard/dsl v0.3.23
@@ -119,7 +119,7 @@ require (
 	github.com/sashamelentyev/interfacebloat v1.1.0
 	github.com/sashamelentyev/usestdlibvars v1.29.0
 	github.com/securego/gosec/v2 v2.29.0
-	github.com/shirou/gopsutil/v4 v4.26.9
+	github.com/shirou/gopsutil/v4 v4.26.10
 	github.com/sirupsen/logrus v1.10.2
 	github.com/sivchari/containedctx v1.0.3
 	github.com/sonatard/noctx v0.5.1
@@ -132,7 +132,7 @@ require (
 	github.com/stretchr/testify v1.12.1
 	github.com/tetafro/godot v1.5.6
 	github.com/timakin/bodyclose v0.0.0-20260723120731-857993a2939c
-	github.com/timonwong/loggercheck v0.13.0
+	github.com/timonwong/loggercheck v0.13.1
 	github.com/tomarrell/wrapcheck/v2 v2.13.0
 	github.com/tommy-muehle/go-mnd/v2 v2.5.1
 	github.com/ultraware/funlen v0.2.0
@@ -149,7 +149,7 @@ require (
 	go-simpler.org/sloglint v0.12.0
 	go.augendre.info/arangolint v0.4.0
 	go.augendre.info/fatcontext v0.10.1
-	go.yaml.in/yaml/v3 v3.0.5
+	go.yaml.in/yaml/v3 v3.0.6
 	golang.org/x/exp v0.0.0-20250620022241-b7579e27df2b
 	golang.org/x/mod v0.42.0
 	golang.org/x/sys v0.49.0
@@ -177,7 +177,7 @@ require (
 	github.com/dave/dst v0.28.0 // indirect
 	github.com/dlclark/regexp2 v1.12.0 // indirect
 	github.com/dlclark/regexp2/v2 v2.2.1 // indirect
-	github.com/ebitengine/purego v0.11.1 // indirect
+	github.com/ebitengine/purego v0.11.2 // indirect
 	github.com/ettle/strcase v0.2.0 // indirect
 	github.com/fatih/structtag v1.2.0 // indirect
 	github.com/fsnotify/fsnotify v1.9.0 // indirect
