@@ -54,6 +54,23 @@ var Commands = []Command {
 {{- end}}
 }
 
+// interactiveCommands is the set of commands that may ask the user for
+// additional input before they can proceed.
+var interactiveCommands = map[Command]bool {
+{{- range .Commands}}
+{{- if .Interactive}}
+	{{.MethodName}}: true,
+{{- end}}
+{{- end}}
+}
+
+// Interactive reports whether the command may ask the user for additional
+// input, through [protocol.InteractiveParams], before it can proceed.
+//
+// Such a command is resolved interactively, through "command/resolve", before
+// the client executes it; see [protocol.InteractiveParams].
+func (c Command) Interactive() bool { return interactiveCommands[c] }
+
 func Dispatch(ctx context.Context, params *protocol.ExecuteCommandParams, s Interface) (any, error) {
 	switch Command(params.Command) {
 	{{- range .Commands}}
@@ -141,11 +158,7 @@ func Generate() ([]byte, error) {
 				log.Println("Command.Args has fallible type", t)
 				return true
 			}
-			for i, arg := range args {
-				if i == len(args)-1 && typesinternal.IsPointerToNamed(arg.Type, "golang.org/x/tools/gopls/internal/protocol", "InteractiveParams") {
-					continue
-				}
-
+			for _, arg := range args {
 				if fallible(arg.Type) {
 					return true
 				}
