@@ -1,70 +1,9 @@
+# golt takes golangci-lint's dependencies through the daily upstream sync, and Renovate
+# keeps the files golt adds. A limit of zero keeps Dependabot from opening version updates.
 version: 2
 updates:
   - package-ecosystem: gomod
-    open-pull-requests-limit: 50
-    directory: "/"
-    cooldown:
-      # Disable cooldown to get the linter's updates as soon as possible.
-      # Note: I don't know if the value 0 works:
-      # - There is no documentation about disabling the cooldown.
-      # - The JSONSchema says that 0 is not valid, but this schema is community maintained and not by GitHub.
-      default-days: 0
-    schedule:
-      interval: weekly
-      day: "sunday"
-      time: "11:00" # 11am UTC
-    ignore:
-      # Ignore forked linters because of their versioning issues.
-      - dependency-name: "github.com/golangci/dupl"
-      - dependency-name: "github.com/golangci/gofmt"
-      - dependency-name: "github.com/golangci/swaggoswag"
-      - dependency-name: "github.com/golangci/unconvert"
-  - package-ecosystem: github-actions
     directory: "/"
     schedule:
       interval: weekly
-    cooldown:
-      default-days: 7
-    groups:
-      github-actions:
-        patterns:
-          - "*"  # Group all updates into a single larger pull request.
-  - package-ecosystem: docker
-    directory: "/build"
-    schedule:
-      interval: weekly
-    cooldown:
-      default-days: 7
-    groups:
-      docker:
-        patterns:
-          - "*"  # Group all updates into a single larger pull request.
-  - package-ecosystem: gomod
-    directory: "/scripts/gen_github_action_config"
-    schedule:
-      interval: weekly
-    cooldown:
-      default-days: 7
-    groups:
-      scripts:
-        patterns:
-          - "*"  # Group all updates into a single larger pull request.
-  - package-ecosystem: gomod
-    directories:
-      - pkg/golinters/arangolint/testdata/
-      - pkg/golinters/clickhouselint/testdata/
-      - pkg/golinters/ginkgolinter/testdata/
-      - pkg/golinters/loggercheck/testdata/
-      - pkg/golinters/protogetter/testdata/
-      - pkg/golinters/spancheck/testdata/
-      - pkg/golinters/zerologlint/testdata/
-    groups:
-      linter-testdata:
-        patterns:
-          - "*"  # Group all updates into a single larger pull request.
-    schedule:
-      interval: monthly
-      day: "wednesday"
-      time: "11:00" # 11am UTC
-    cooldown:
-      default-days: 7
+    open-pull-requests-limit: 0
