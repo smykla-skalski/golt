@@ -31,6 +31,8 @@ jobs:
         with:
           app-id: ${{ vars.SMYKLOT_APP_ID }}
           private-key: ${{ secrets.SMYKLOT_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-workflows: write
 
       # golt is not a GitHub fork, so merge-upstream is unavailable; merge with git
       # and fail on conflicts, which are resolved manually (forks/README.md).
