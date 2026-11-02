@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: sync-upstream
@@ -25,11 +25,18 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      # main's rulesets refuse a merge commit from GITHUB_TOKEN; the smyklot app is exempt.
+      - id: app-token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          app-id: ${{ vars.SMYKLOT_APP_ID }}
+          private-key: ${{ secrets.SMYKLOT_APP_PRIVATE_KEY }}
+
       # golt is not a GitHub fork, so merge-upstream is unavailable; merge with git
       # and fail on conflicts, which are resolved manually (forks/README.md).
       - name: Merge golangci/golangci-lint main
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
