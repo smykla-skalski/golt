@@ -8,3 +8,4 @@ README.md merge=ours
 .github/ISSUE_TEMPLATE/bug_report.yml merge=ours
 .github/ISSUE_TEMPLATE/config.yml merge=ours
 .github/PULL_REQUEST_TEMPLATE.md merge=ours
+.github/dependabot.yml merge=ours
