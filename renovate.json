@@ -13,6 +13,17 @@
     "security:openssf-scorecard",
     "group:linters"
   ],
+  "includePaths": [
+    ".github/workflows/cache-pruning.yml",
+    ".github/workflows/daily-benchmark.yml",
+    ".github/workflows/fork-release.yml",
+    ".github/workflows/forks.yml",
+    ".github/workflows/kuma-*.yml",
+    ".github/workflows/performance-benchmark.yml",
+    ".github/workflows/pr-rust.yml",
+    ".github/workflows/sync-upstream.yml",
+    "rust/**"
+  ],
   "ignorePaths": ["**/tmp/**", ".github/workflows/smyklot-pr-commands.yml", ".github/workflows/smyklot-poll.yml"],
   "osvVulnerabilityAlerts": true,
   "gitIgnoredAuthors": ["205507218+smyklot[bot]@users.noreply.github.com"],
