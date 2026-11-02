@@ -22,7 +22,7 @@ import (
 	"testing"
 	"unsafe"
 
-	"golang.org/x/tools/go/ast/astutil"
+	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/go/types/typeutil"
 	"golang.org/x/tools/internal/analysis/driverutil"
@@ -32,6 +32,7 @@ import (
 	"golang.org/x/tools/internal/refactor/inline"
 	"golang.org/x/tools/internal/testenv"
 	"golang.org/x/tools/internal/testfiles"
+	"golang.org/x/tools/internal/typesinternal"
 	"golang.org/x/tools/txtar"
 )
 
@@ -216,18 +217,15 @@ func doInlineNote(logf func(string, ...any), pkg *packages.Package, file *ast.Fi
 	// Find innermost call enclosing the pattern match.
 	var caller *inline.Caller
 	{
-		path, _ := astutil.PathEnclosingInterval(file, startPos, endPos)
-		for _, n := range path {
-			if call, ok := n.(*ast.CallExpr); ok {
-				caller = &inline.Caller{
-					Fset:  pkg.Fset,
-					Types: pkg.Types,
-					Info:  pkg.TypesInfo,
-					File:  file,
-					Call:  call,
-				}
-				break
+		cur, _ := inspector.New([]*ast.File{file}).Root().FindByPos(startPos, endPos)
+		for curCall := range cur.Enclosing((*ast.CallExpr)(nil)) {
+			caller = &inline.Caller{
+				Fset:  pkg.Fset,
+				Types: pkg.Types,
+				Info:  pkg.TypesInfo,
+				Call:  curCall,
 			}
+			break
 		}
 		if caller == nil {
 			return fmt.Errorf("no enclosing call")
@@ -235,7 +233,7 @@ func doInlineNote(logf func(string, ...any), pkg *packages.Package, file *ast.Fi
 	}
 
 	// Is it a static function call?
-	fn := typeutil.StaticCallee(caller.Info, caller.Call)
+	fn := typeutil.StaticCallee(caller.Info, caller.Call.Node().(*ast.CallExpr))
 	if fn == nil {
 		return fmt.Errorf("cannot inline: not a static call")
 	}
@@ -297,7 +295,7 @@ func doInlineNote(logf func(string, ...any), pkg *packages.Package, file *ast.Fi
 			return nil, err
 		}
 
-		check := checkNoMutation(caller.File)
+		check := checkNoMutation(file)
 		defer check()
 		return inline.Inline(caller, callee, &inline.Options{Logf: logf})
 	}()
@@ -312,7 +310,7 @@ func doInlineNote(logf func(string, ...any), pkg *packages.Package, file *ast.Fi
 	}
 
 	// Inline succeeded.
-	got, err := applyEdits(caller.Types, caller.File.FileStart, content, res.Edits)
+	got, err := applyEdits(caller.Types, file.FileStart, content, res.Edits)
 	if err != nil {
 		return err
 	}
@@ -428,7 +426,7 @@ func TestBasics(t *testing.T) {
 			`func f(s string, i int) { print(s, s, i, i) }`,
 			`func _() { f("hi", 0)  }`,
 			`func _() {
-	var s string = "hi"
+	s := "hi"
 	print(s, s, 0, 0)
 }`,
 		},
@@ -483,7 +481,7 @@ func TestDuplicable(t *testing.T) {
 				`func f(s string) { print(s, s) }`,
 				`func _() { f("hi")  }`,
 				`func _() {
-	var s string = "hi"
+	s := "hi"
 	print(s, s)
 }`,
 			},
@@ -498,7 +496,7 @@ func TestDuplicable(t *testing.T) {
 				`func f(a [2]int) { print(a, a) }`,
 				`func _() { f([2]int{1, 2})  }`,
 				`func _() {
-	var a [2]int = [2]int{1, 2}
+	a := [2]int{1, 2}
 	print(a, a)
 }`,
 			},
@@ -513,7 +511,7 @@ func TestDuplicable(t *testing.T) {
 				`func f(s S) { print(s, s) }; type S struct { x int }`,
 				`func _() { f(S{x: 1})  }`,
 				`func _() {
-	var s S = S{x: 1}
+	s := S{x: 1}
 	print(s, s)
 }`,
 			},
@@ -558,7 +556,7 @@ func TestDuplicable(t *testing.T) {
 				`func _() { var s string; f([]byte(s)) }`,
 				`func _() {
 	var s string
-	var b []byte = []byte(s)
+	b := []byte(s)
 	print(b, b)
 }`,
 			},
@@ -568,7 +566,7 @@ func TestDuplicable(t *testing.T) {
 				`func _() { var s string; f([]uint8(s)) }`,
 				`func _() {
 	var s string
-	var b []uint8 = []uint8(s)
+	b := []uint8(s)
 	print(b, b)
 }`,
 			},
@@ -578,7 +576,7 @@ func TestDuplicable(t *testing.T) {
 				`func _() { var s string; f([]rune(s)) }`,
 				`func _() {
 	var s string
-	var r []rune = []rune(s)
+	r := []rune(s)
 	print(r, r)
 }`,
 			},
@@ -588,7 +586,7 @@ func TestDuplicable(t *testing.T) {
 				`func _() { var s string; f(B(s)) }`,
 				`func _() {
 	var s string
-	var b B = B(s)
+	b := B(s)
 	print(b, b)
 }`,
 			},
@@ -603,7 +601,7 @@ func TestDuplicable(t *testing.T) {
 				`func f(i int) { print(i, i) }`,
 				`func _() { f(len(""))  }`,
 				`func _() {
-	var i int = len("")
+	i := len("")
 	print(i, i)
 }`,
 			},
@@ -612,7 +610,7 @@ func TestDuplicable(t *testing.T) {
 				`func f(c complex128) { print(c, c) }`,
 				`func _() { f(complex(1.0, 2.0)) }`,
 				`func _() {
-	var c complex128 = complex(1.0, 2.0)
+	c := complex(1.0, 2.0)
 	print(c, c)
 }`,
 			},
@@ -623,7 +621,7 @@ func TestDuplicable(t *testing.T) {
 func f1(i int) int { return i + 1 }`,
 				`func _() { f(f1(1))  }`,
 				`func _() {
-	var i int = f1(1)
+	i := f1(1)
 	print(i, i)
 }`,
 			},
@@ -803,7 +801,7 @@ func TestSubstitution(t *testing.T) {
 			`func _() { var z int; f(z) }`,
 			`func _() {
 	var z int
-	var _ int = z
+	_ = z
 	print([]int{})
 }`,
 		},
@@ -826,7 +824,7 @@ func TestSubstitution(t *testing.T) {
 			`func f(x int) { _ = func() { y := 1; print(y); print(x) } }`,
 			`func _(y int) { f(y) } `,
 			`func _(y int) {
-	var x int = y
+	x := y
 	_ = func() { y := 1; print(y); print(x) }
 }`,
 		},
@@ -848,10 +846,13 @@ func TestTailCallStrategy(t *testing.T) {
 			`func _() { println() }`,
 		},
 		{
-			"void with defer", // => literalized
+			"void with defer (last stmt is void tail-call)",
 			`func f() { defer f(); println() }`,
 			`func _() { f() }`,
-			`func _() { func() { defer f(); println() }() }`,
+			`func _() {
+	defer f()
+	println()
+}`,
 		},
 		// Tests for issue #63336:
 		{
@@ -871,6 +872,126 @@ func TestTailCallStrategy(t *testing.T) {
 			`func f() error { return E{} }; type E struct{error}`,
 			`func _() any { return f() }`,
 			`func _() any { return error(E{}) }`,
+		},
+	})
+}
+
+func TestVoidTailCallStrategy(t *testing.T) {
+	// Void tail-call allows defer in the callee when the call is
+	// immediately before an (explicit or implicit) return whose
+	// results are pure. See golang/go#63352 and golang/go#80984.
+	runTests(t, []testcase{
+		{
+			"f(); return with defer",
+			`func f() { defer println("cleanup"); println("work") }`,
+			`func _() { f(); return }`,
+			`func _() {
+	defer println("cleanup")
+	println("work")
+	return
+}`,
+		},
+		{
+			"explicit bare return: func f() { defer ...; return }",
+			`func f() { defer println("cleanup") }`,
+			`func _() { f(); return }`,
+			`func _() { defer println("cleanup"); return }`,
+		},
+		{
+			"f() as last statement with defer",
+			`func f() { defer println("cleanup"); println("work") }`,
+			`func _() { f() }`,
+			`func _() {
+	defer println("cleanup")
+	println("work")
+}`,
+		},
+		{
+			"f(); return 0 with pure return and defer",
+			`func f() { defer println("cleanup"); println("work") }`,
+			`func _() int { f(); return 0 }`,
+			`func _() int {
+	defer println("cleanup")
+	println("work")
+	return 0
+}`,
+		},
+		{
+			"f(); return g() with impure return and defer => literalize",
+			`func f() { defer println("cleanup"); println("work") }; func g() int { return 1 }`,
+			`func _() int { f(); return g() }`,
+			`func _() int { func() { defer println("cleanup"); println("work") }(); return g() }`,
+		},
+		{
+			"statement between call and return => literalize",
+			`func f() { defer println("cleanup"); println("work") }`,
+			`func _() { f(); println("between"); return }`,
+			`func _() { func() { defer println("cleanup"); println("work") }(); println("between"); return }`,
+		},
+		{
+			"labeled void tail-call with defer",
+			`func f() { defer println("cleanup"); println("work") }`,
+			`func _() {
+	goto label
+label:
+	f()
+	return
+}`,
+			`func _() {
+	goto label
+label:
+	{
+		defer println("cleanup")
+		println("work")
+	}
+	return
+}`,
+		},
+		{
+			"last stmt in loop body is not void tail => literalize",
+			`func f() { defer println("cleanup"); println("work") }`,
+			`func _() { for { f() } }`,
+			`func _() {
+	for {
+		func() { defer println("cleanup"); println("work") }()
+	}
+}`,
+		},
+		{
+			"last stmt in if branch with code after is not void tail => literalize",
+			`func f() { defer println("cleanup"); println("work") }`,
+			`func _() { if true { f() }; println("after") }`,
+			`func _() {
+	if true {
+		func() { defer println("cleanup"); println("work") }()
+	}
+	println("after")
+}`,
+		},
+		{
+			"f(); return inside if with defer is still void tail",
+			`func f() { defer println("cleanup"); println("work") }`,
+			`func _() { if true { f(); return }; println("after") }`,
+			`func _() {
+	if true {
+		defer println("cleanup")
+		println("work")
+		return
+	}
+	println("after")
+}`,
+		},
+		{
+			"impure return after switch is not void tail => literalize",
+			`func f() { defer println("cleanup"); println("work") }; func g() int { return 1 }`,
+			`func _() int { switch { case true: f() }; return g() }`,
+			`func _() int {
+	switch {
+	case true:
+		func() { defer println("cleanup"); println("work") }()
+	}
+	return g()
+}`,
 		},
 	})
 }
@@ -1084,13 +1205,20 @@ func TestVariadic(t *testing.T) {
 			"Variadic cancellation (basic).",
 			`func f(args ...any) { defer f(&args); println(args) }`,
 			`func _(slice []any) { f(slice...) }`,
-			`func _(slice []any) { func() { var args []any = slice; defer f(&args); println(args) }() }`,
+			`func _(slice []any) {
+	args := slice
+	defer f(&args)
+	println(args)
+}`,
 		},
 		{
-			"Variadic cancellation (literalization with parameter elimination).",
+			"Variadic cancellation (void tail-call with parameter elimination).",
 			`func f(args ...any) { defer f(); println(args) }`,
 			`func _(slice []any) { f(slice...) }`,
-			`func _(slice []any) { func() { defer f(); println(slice) }() }`,
+			`func _(slice []any) {
+	defer f()
+	println(slice)
+}`,
 		},
 		{
 			"Variadic cancellation (reduction).",
@@ -1105,10 +1233,10 @@ func TestVariadic(t *testing.T) {
 			`func _(a, b int) { _ = append([]int{1}, a, b) }`,
 		},
 		{
-			"Variadic elimination (literalization).",
-			`func f(x any, rest ...any) { defer println(x, rest) }`, // defer => literalization
+			"Variadic elimination (void tail-call).",
+			`func f(x any, rest ...any) { defer println(x, rest) }`,
 			`func _() { f(1, 2, 3) }`,
-			`func _() { func() { defer println(1, []any{2, 3}) }() }`,
+			`func _() { defer println(1, []any{2, 3}) }`,
 		},
 		{
 			"Variadic elimination (reduction).",
@@ -1144,7 +1272,7 @@ func TestParameterBindingDecl(t *testing.T) {
 			`func f(x int) { x++ }`,
 			`func _() { f(1) }`,
 			`func _() {
-	var x int = 1
+	x := 1
 	x++
 }`,
 		},
@@ -1169,22 +1297,32 @@ func TestParameterBindingDecl(t *testing.T) {
 			`func f(x int) int { return <-h(g(2), x) }; func g(int) int; func h(int, int) chan int`,
 			`func _() { f(g(1)) }`,
 			`func _() {
-	var x int = g(1)
+	x := g(1)
 	<-h(g(2), x)
 }`,
 		},
 		{
-			"No binding decl due to shadowing of int",
+			// Omitting the type of z avoids shadowing of the built-in
+			// type name int by the earlier parameter named int, so a
+			// binding decl is possible.
+			"Binding decl omits type to avoid shadowing of int",
 			`func f(int, y any, z int) { defer g(0); println(int, y, z) }; func g(int) int`,
 			`func _() { f(g(1), g(2), g(3)) }`,
-			`func _() { func(int, y any, z int) { defer g(0); println(int, y, z) }(g(1), g(2), g(3)) }`,
+			`func _() {
+	var (
+		int, y any = g(1), g(2)
+		z          = g(3)
+	)
+	defer g(0)
+	println(int, y, z)
+}`,
 		},
 		{
 			"An indirect method selection (*x).g acts as a read.",
 			`func f(x *T, y any) any { return x.g(y) }; type T struct{}; func (T) g(x any) any { return x }`,
 			`func _(x *T) { f(x, recover()) }`,
 			`func _(x *T) {
-	var y any = recover()
+	y := recover()
 	x.g(y)
 }`,
 		},
@@ -1198,13 +1336,23 @@ func TestParameterBindingDecl(t *testing.T) {
 			"Literalization can make use of a binding decl (all params).",
 			`func f(x, y int) int { defer println(); return y + x }; func g(int) int`,
 			`func _() { println(f(g(1), g(2))) }`,
-			`func _() { println(func() int { var x, y int = g(1), g(2); defer println(); return y + x }()) }`,
+			`func _() { println(func() int { x, y := g(1), g(2); defer println(); return y + x }()) }`,
 		},
 		{
 			"Literalization can make use of a binding decl (some params).",
 			`func f(x, y int) int { z := y + x; defer println(); return z }; func g(int) int`,
 			`func _() { println(f(g(1), g(2))) }`,
-			`func _() { println(func() int { var x int = g(1); z := g(2) + x; defer println(); return z }()) }`,
+			`func _() { println(func() int { x := g(1); z := g(2) + x; defer println(); return z }()) }`,
+		},
+		{
+			"Binding decl keeps type for interface conversion.",
+			`func f(x any) { defer println(); println(x, x) }; func g() int`,
+			`func _() { f(g()) }`,
+			`func _() {
+	var x any = g()
+	defer println()
+	println(x, x)
+}`,
 		},
 		{
 			"Literalization can't yet use of a binding decl if named results.",
@@ -1271,7 +1419,7 @@ func TestEmbeddedFields(t *testing.T) {
 			`func (x T) _() { x.f() }`,
 			`func (x T) _() {
 	{
-		var x *T = &x
+		x := &x
 		g()
 		print(*x)
 	}
@@ -1306,7 +1454,7 @@ func TestSubstitutionGroups(t *testing.T) {
 			`func _() {
 	var a, b, c, d int
 	{
-		var a, b, c int = a + b + c, a + b, d
+		a, b, c := a+b+c, a+b, d
 		var d int
 		print(a, b, c, d)
 	}
@@ -1325,7 +1473,7 @@ func TestSubstitutionGroups(t *testing.T) {
 			`func _() {
 	var a, b, c, d, e int
 	{
-		var a, b, d int = a + b, c + d, e
+		a, b, d := a+b, c+d, e
 		var e int
 		print(a, b, c, d, e)
 	}
@@ -1347,7 +1495,7 @@ func TestSubstitutionPreservesArgumentEffectOrder(t *testing.T) {
 			`func f(a, b, c int) { print(a, c, b) }; func g(int) int`,
 			`func _() { f(g(1), g(2), g(3)) }`,
 			`func _() {
-	var a, b int = g(1), g(2)
+	a, b := g(1), g(2)
 	print(a, g(3), b)
 }`,
 		},
@@ -1368,7 +1516,7 @@ func TestSubstitutionPreservesArgumentEffectOrder(t *testing.T) {
 			`func f(a, b, c, d int) { print(a, c, b, d) }; func g(int) int; var x, y int`,
 			`func _() { f(g(1), g(2), y, g(3)) }`,
 			`func _() {
-	var a, b int = g(1), g(2)
+	a, b := g(1), g(2)
 	print(a, y, b, g(3))
 }`,
 		},
@@ -1377,7 +1525,7 @@ func TestSubstitutionPreservesArgumentEffectOrder(t *testing.T) {
 			`func f(a, b, c, d int) { print(a, c, b, d) }; func g(int) int; var x, y int`,
 			`func _() { f(g(1), y, g(2), g(3)) }`,
 			`func _() {
-	var a, b int = g(1), y
+	a, b := g(1), y
 	print(a, g(2), b, g(3))
 }`,
 		},
@@ -1398,7 +1546,7 @@ func TestSubstitutionPreservesArgumentEffectOrder(t *testing.T) {
 			`func f(a, b, c int) { print(a, b, recover().(int), c) }; var x, y, z int`,
 			`func _() { f(x, y, z) }`,
 			`func _() {
-	var c int = z
+	c := z
 	print(x, y, recover().(int), c)
 }`,
 		},
@@ -1407,7 +1555,7 @@ func TestSubstitutionPreservesArgumentEffectOrder(t *testing.T) {
 			`func f(a, b, c int) { print(a, b, recover().(int), c) }; func g(int) int; var x, y, z int`,
 			`func _() { f(x, y, g(0))  }`,
 			`func _() {
-	var a, b, c int = x, y, g(0)
+	a, b, c := x, y, g(0)
 	print(a, b, recover().(int), c)
 }`,
 		},
@@ -1416,7 +1564,7 @@ func TestSubstitutionPreservesArgumentEffectOrder(t *testing.T) {
 			`func f(a, b, c, d, e int) { print(b, a, c, e, d) }; func g(int) int; var x, y int`,
 			`func _() { f(x, g(1), g(2), y, g(3))  }`,
 			`func _() {
-	var a, b, c, d int = x, g(1), g(2), y
+	a, b, c, d := x, g(1), g(2), y
 	print(b, a, c, g(3), d)
 }`,
 		},
@@ -1436,7 +1584,7 @@ func TestSubstitutionPreservesArgumentEffectOrder(t *testing.T) {
 	x := new(struct{ y int })
 	z := x
 	{
-		var x, y int = x.y, set(&x, z, nil)
+		x, y := x.y, set(&x, z, nil)
 		_ = x + y
 	}
 }`,
@@ -1449,7 +1597,7 @@ func TestSubstitutionPreservesArgumentEffectOrder(t *testing.T) {
 			`func f(x, y int) { _ = &y }; func g(int) int`,
 			`func _() { f(g(1), g(2)) }`,
 			`func _() {
-	var _, y int = g(1), g(2)
+	_, y := g(1), g(2)
 	_ = &y
 }`,
 		},
@@ -1461,7 +1609,7 @@ func TestSubstitutionPreservesArgumentEffectOrder(t *testing.T) {
 			`func f(x, y int) { _ = x }; func g(int) int; var v int`,
 			`func _() { f(v, g(2)) }`,
 			`func _() {
-	var x, _ int = v, g(2)
+	x, _ := v, g(2)
 	_ = x
 }`,
 		},
@@ -1469,7 +1617,7 @@ func TestSubstitutionPreservesArgumentEffectOrder(t *testing.T) {
 			"Defer f() evaluates f() before unknown effects",
 			`func f(int, y any, z int) { defer println(int, y, z) }; func g(int) int`,
 			`func _() { f(g(1), g(2), g(3)) }`,
-			`func _() { func() { defer println(g(1), g(2), g(3)) }() }`,
+			`func _() { defer println(g(1), g(2), g(3)) }`,
 		},
 		{
 			"Effects are ignored when IgnoreEffects",
@@ -1497,7 +1645,7 @@ func TestNamedResultVars(t *testing.T) {
 			`func _() { f(".") }`,
 			`func _() {
 	var (
-		y string = "."
+		y = "."
 		x int
 	)
 	_ = x + x + len(y+y)
@@ -1510,7 +1658,7 @@ func TestNamedResultVars(t *testing.T) {
 			`func _() { f(".") }`,
 			`func _() {
 	var (
-		y string = "."
+		y = "."
 		x string
 	)
 	_ = x + y + y
@@ -1612,7 +1760,7 @@ func TestSubstitutionPreservesParameterType(t *testing.T) {
 			"Implicit dereference is made explicit outside of selector", // TODO(rfindley): avoid unnecessary literalization here
 			`type T int; func (x T) f() bool { return x == x.id() }; func (x T) id() T { return x }`,
 			`func _() { var t *T; _ = t.f() }`,
-			`func _() { var t *T; _ = func() bool { var x T = *t; return x == x.id() }() }`,
+			`func _() { var t *T; _ = func() bool { x := *t; return x == x.id() }() }`,
 		},
 		{
 			"Check for shadowing error on type used in the conversion.",
@@ -1855,36 +2003,9 @@ func runTests(t *testing.T, tests []testcase) {
 				t.Fatalf("declaration of func %s not found: %s", funcName, test.callee)
 			}
 
-			// Parse caller file and find first call to f().
+			// Parse caller file.
 			callerContent := addPackageClause(test.caller)
 			callerFile := mustParse("caller.go", callerContent)
-			var call *ast.CallExpr
-			ast.Inspect(callerFile, func(n ast.Node) bool {
-				if n, ok := n.(*ast.CallExpr); ok {
-					switch fun := n.Fun.(type) {
-					case *ast.SelectorExpr:
-						if fun.Sel.Name == funcName {
-							call = n
-						}
-					case *ast.Ident:
-						if fun.Name == funcName {
-							call = n
-						}
-					case *ast.IndexExpr:
-						if id, ok := fun.X.(*ast.Ident); ok && id.Name == funcName {
-							call = n
-						}
-					case *ast.IndexListExpr:
-						if id, ok := fun.X.(*ast.Ident); ok && id.Name == funcName {
-							call = n
-						}
-					}
-				}
-				return call == nil
-			})
-			if call == nil {
-				t.Fatalf("call to %s not found: %s", funcName, test.caller)
-			}
 
 			// Type check both files as one package.
 			info := &types.Info{
@@ -1902,6 +2023,18 @@ func runTests(t *testing.T, tests []testcase) {
 				t.Fatal("transformation introduced type errors")
 			}
 
+			// Find first call to f() in caller file.
+			var curCall inspector.Cursor
+			for cur := range inspector.New([]*ast.File{callerFile}).Root().Preorder((*ast.CallExpr)(nil)) {
+				if id := typesinternal.UsedIdent(info, cur.Node().(*ast.CallExpr).Fun); id != nil && id.Name == funcName {
+					curCall = cur
+					break
+				}
+			}
+			if !curCall.Valid() {
+				t.Fatalf("call to %s not found: %s", funcName, test.caller)
+			}
+
 			// Analyze callee and inline call.
 			doIt := func() (*inline.Result, error) {
 				callee, err := inline.AnalyzeCallee(t.Logf, fset, pkg, info, decl, []byte(calleeContent))
@@ -1916,10 +2049,9 @@ func runTests(t *testing.T, tests []testcase) {
 					Fset:  fset,
 					Types: pkg,
 					Info:  info,
-					File:  callerFile,
-					Call:  call,
+					Call:  curCall,
 				}
-				check := checkNoMutation(caller.File)
+				check := checkNoMutation(callerFile)
 				defer check()
 				return inline.Inline(caller, callee, &inline.Options{
 					Logf:          t.Logf,

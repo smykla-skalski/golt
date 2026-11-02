@@ -3,8 +3,7 @@
 // license that can be found in the LICENSE file.
 
 // Except for this comment, this file is a verbatim copy of the file
-// with the same name in $GOROOT/src/go/internal/gccgoimporter, with
-// a small modification in parseInterface to support older Go versions.
+// with the same name in $GOROOT/src/go/internal/gccgoimporter.
 
 package gccgoimporter
 
@@ -309,7 +308,7 @@ func (p *parser) parseParam(pkg *types.Package) (param *types.Var, isVariadic bo
 func (p *parser) parseVar(pkg *types.Package) *types.Var {
 	name := p.parseName()
 	v := types.NewVar(token.NoPos, pkg, name, p.parseType(pkg))
-	typesinternal.SetVarKind(v, typesinternal.PackageVar)
+	v.SetKind(types.PackageVar)
 	if name[0] == '.' || name[0] == '<' {
 		// This is an unexported variable,
 		// or a variable defined in a different package.
@@ -861,7 +860,7 @@ func (p *parser) parseInterfaceType(pkg *types.Package, nlist []any) types.Type 
 	}
 	p.expect('}')
 
-	*t = *newInterface(methods, embeddeds)
+	*t = *types.NewInterfaceType(methods, embeddeds)
 	return t
 }
 

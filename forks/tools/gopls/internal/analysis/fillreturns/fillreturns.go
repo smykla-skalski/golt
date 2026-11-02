@@ -20,14 +20,18 @@ import (
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/gopls/internal/fuzzy"
-	"golang.org/x/tools/gopls/internal/util/cursorutil"
 	"golang.org/x/tools/internal/analysis/analyzerutil"
+	"golang.org/x/tools/internal/astutil"
+	"golang.org/x/tools/internal/cursorutil"
 	"golang.org/x/tools/internal/moreiters"
 	"golang.org/x/tools/internal/typesinternal"
 )
 
 //go:embed doc.go
 var doc string
+
+// No standalone main.go: this analyzer only adds fixes to type errors,
+// and is thus useful only within gopls.
 
 var Analyzer = &analysis.Analyzer{
 	Name:             "fillreturns",
@@ -112,7 +116,7 @@ outer:
 			retTyps = append(retTyps, retTyp)
 		}
 
-		file, _ := cursorutil.FirstEnclosing[*ast.File](curRet)
+		file := astutil.EnclosingFile(curRet)
 		matches := MatchingIdents(retTyps, file, ret.Pos(), info, pass.Pkg)
 		qual := typesinternal.FileQualifier(file, pass.Pkg)
 		for i, retTyp := range retTyps {

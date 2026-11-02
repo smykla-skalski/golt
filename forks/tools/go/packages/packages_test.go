@@ -1844,9 +1844,6 @@ func testErrorMissingFile(t *testing.T, exporter packagestest.Exporter) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(pkgs) == 0 && runtime.GOOS == "windows" {
-		t.Skip("Issue #31344: the ad-hoc command-line-arguments package isn't created on windows")
-	}
 	if len(pkgs) != 1 || (pkgs[0].PkgPath != "command-line-arguments" && pkgs[0].PkgPath != "missing.go") {
 		t.Fatalf("packages.Load: want [command-line-arguments] or [missing.go], got %v", pkgs)
 	}
@@ -2007,6 +2004,54 @@ func testAdHocContains(t *testing.T, exporter packagestest.Exporter) {
 	}
 	if len(pkg.GoFiles) != 1 || pkg.GoFiles[0] != filename {
 		t.Fatalf("GoFiles of loaded package: want [%s], got %v", filename, pkg.GoFiles)
+	}
+}
+
+// golang.org/issue/54815: a non-.go file in a file= query should not be made into an ad-hoc Go package.
+func TestAdHocContainsNonGoFile(t *testing.T) {
+	testAllOrModulesParallel(t, testAdHocContainsNonGoFile)
+}
+func testAdHocContainsNonGoFile(t *testing.T, exporter packagestest.Exporter) {
+	exported := packagestest.Export(t, exporter, []packagestest.Module{{
+		Name: "golang.org/fake",
+		Files: map[string]any{
+			"a/a.go": `package a;`,
+		}}})
+	defer exported.Cleanup()
+
+	filename := filepath.Join(t.TempDir(), "adhoc")
+	if err := os.WriteFile(filename, []byte("This is not Go code."), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	exported.Config.Mode = packages.NeedImports | packages.NeedFiles
+	pkgs, err := packages.Load(exported.Config, "file="+filename)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, pkg := range pkgs {
+		for _, f := range pkg.GoFiles {
+			if f == filename {
+				t.Fatalf("non-Go file %s unexpectedly included in GoFiles of package %s", filename, pkg.ID)
+			}
+		}
+	}
+
+	// Also test when the non-Go file is in an overlay (golang/go#33482, #54815).
+	cfg := *exported.Config
+	cfg.Overlay = map[string][]byte{
+		filename: []byte("This is not Go code."),
+	}
+	pkgs, err = packages.Load(&cfg, "file="+filename)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, pkg := range pkgs {
+		for _, f := range pkg.GoFiles {
+			if f == filename {
+				t.Fatalf("non-Go overlay file %s unexpectedly included in GoFiles of package %s", filename, pkg.ID)
+			}
+		}
 	}
 }
 
@@ -2558,6 +2603,43 @@ func testCycleImportStack(t *testing.T, exporter packagestest.Exporter) {
 	expected := "import cycle not allowed: import stack: [golang.org/fake/a golang.org/fake/b golang.org/fake/a]"
 	if pkg.Errors[0].Msg != expected {
 		t.Fatalf("Expected error %q, got %q", expected, pkg.Errors[0].Msg)
+	}
+}
+
+// TestCycleImportStackInTest checks that import cycles in tests include the import stack.
+// See golang.org/issue/38826.
+func TestCycleImportStackInTest(t *testing.T) {
+	testAllOrModulesParallel(t, testCycleImportStackInTest)
+}
+func testCycleImportStackInTest(t *testing.T, exporter packagestest.Exporter) {
+	exported := packagestest.Export(t, exporter, []packagestest.Module{{
+		Name: "golang.org/fake",
+		Files: map[string]any{
+			"a/a.go":      `package a`,
+			"a/a_test.go": `package a; import _ "golang.org/fake/b"`,
+			"b/b.go":      `package b; import _ "golang.org/fake/a"`,
+		}}})
+	defer exported.Cleanup()
+
+	exported.Config.Mode = packages.NeedName | packages.NeedImports
+	exported.Config.Tests = true
+	pkgs, err := packages.Load(exported.Config, "golang.org/fake/a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var testPkg *packages.Package
+	for _, p := range pkgs {
+		if len(p.Errors) > 0 {
+			testPkg = p
+			break
+		}
+	}
+	if testPkg == nil {
+		t.Fatalf("Expected test package with error, got %v", pkgs)
+	}
+	expected := "import cycle not allowed in test: import stack: [golang.org/fake/a golang.org/fake/b golang.org/fake/a]"
+	if testPkg.Errors[0].Msg != expected {
+		t.Fatalf("Expected error %q, got %q", expected, testPkg.Errors[0].Msg)
 	}
 }
 
