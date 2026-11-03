@@ -47,7 +47,7 @@ env:
 jobs:
   build:
     if: github.repository == 'smykla-skalski/golt'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -84,7 +84,7 @@ jobs:
   # paired; scenarios and execution orders only spread across runners.
   bench:
     needs: build
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 340
     strategy:
       fail-fast: false
@@ -169,7 +169,7 @@ jobs:
   summary:
     needs: [build, bench]
     if: always() && needs.build.result == 'success'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
