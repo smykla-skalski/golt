@@ -78,7 +78,7 @@ concurrency:
 jobs:
   benchmark:
     if: github.repository == 'smykla-skalski/golt' && github.event_name == 'workflow_dispatch' && !inputs.local_workflow && !inputs.upstream_parallel
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 60
     env:
       GOMAXPROCS: 2
@@ -204,7 +204,7 @@ jobs:
   upstream-parallel:
     if: github.repository == 'smykla-skalski/golt' && github.event_name == 'workflow_dispatch' && inputs.upstream_parallel && inputs.upstream_tag != ''
     name: upstream-parallel (${{ matrix.workload }})
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 60
     strategy:
       fail-fast: false
@@ -288,7 +288,7 @@ jobs:
   local-workflow:
     if: github.repository == 'smykla-skalski/golt' && (github.event_name == 'push' || inputs.local_workflow)
     name: local-workflow (${{ matrix.workload }})
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 60
     strategy:
       fail-fast: false
