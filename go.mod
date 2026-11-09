@@ -15,7 +15,7 @@ require (
 	4d63.com/gocheckcompilerdirectives v1.4.0
 	4d63.com/gochecknoglobals v0.2.2
 	charm.land/lipgloss/v2 v2.0.6
-	codeberg.org/polyfloyd/go-errorlint v1.9.0
+	codeberg.org/polyfloyd/go-errorlint v1.9.1
 	dev.gaijin.team/go/exhaustruct/v4 v4.0.0
 	dev.gaijin.team/go/exhaustruct/v5 v5.2.0
 	github.com/4meepo/tagalign v1.4.4
@@ -61,12 +61,12 @@ require (
 	github.com/go-viper/mapstructure/v2 v2.5.0
 	github.com/go-xmlfmt/xmlfmt v1.1.3
 	github.com/godoc-lint/godoc-lint v0.11.4
-	github.com/gofrs/flock v0.13.1
+	github.com/gofrs/flock v0.13.2
 	github.com/golangci/asciicheck v0.5.0
 	github.com/golangci/dupl v0.0.0-20260401084720-c99c5cf5c202
 	github.com/golangci/go-printf-func-name v0.1.1
 	github.com/golangci/gofmt v0.0.0-20260820135601-e84e05053792
-	github.com/golangci/golines v0.16.0
+	github.com/golangci/golines v0.16.1
 	github.com/golangci/misspell v0.8.0
 	github.com/golangci/plugin-module-register v0.1.2
 	github.com/golangci/revgrep v0.8.0
@@ -109,7 +109,7 @@ require (
 	github.com/nunnatsa/ginkgolinter v0.24.0
 	github.com/pelletier/go-toml/v2 v2.4.3
 	github.com/quasilyte/go-ruleguard/dsl v0.3.23
-	github.com/raeperd/recvcheck v0.3.1
+	github.com/raeperd/recvcheck v0.3.2
 	github.com/rogpeppe/go-internal v1.16.0
 	github.com/ryancurrah/gomodguard v1.4.1
 	github.com/ryancurrah/gomodguard/v2 v2.1.3
@@ -125,7 +125,7 @@ require (
 	github.com/sonatard/noctx v0.5.1
 	github.com/sourcegraph/go-diff v0.9.0
 	github.com/spf13/cobra v1.10.2
-	github.com/spf13/pflag v1.0.10
+	github.com/spf13/pflag v1.1.0
 	github.com/spf13/viper v1.12.0
 	github.com/ssgreg/nlreturn/v2 v2.2.1
 	github.com/stbenjam/no-sprintf-host-port v0.3.1
@@ -199,7 +199,7 @@ require (
 	github.com/hashicorp/hcl v1.0.0 // indirect
 	github.com/hexops/gotextdiff v1.0.3 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
-	github.com/ldez/structtags v0.6.1 // indirect
+	github.com/ldez/structtags v0.6.2 // indirect
 	github.com/lucasb-eyer/go-colorful v1.4.1 // indirect
 	github.com/lufia/plan9stats v0.0.0-20211012122336-39d0f177ccd0 // indirect
 	github.com/magiconair/properties v1.8.6 // indirect
