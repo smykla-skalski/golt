@@ -13,6 +13,24 @@ dependency the fork has not been rebased onto yet.
 Each directory is a squashed `git subtree` of the upstream tag, followed by
 our patches as ordinary commits (`git log -- forks/<dir>`).
 
+## Resolve a failed upstream sync
+
+`Sync upstream` stops when merging golangci-lint `main` conflicts. Merge it
+on a branch, resolve, and open a PR:
+
+```sh
+git switch -c chore/sync-upstream origin/main
+git config merge.ours.driver true
+git fetch --no-tags https://github.com/golangci/golangci-lint.git main
+git merge FETCH_HEAD   # resolve, go mod tidy, test
+git commit -s -S -m "chore(sync): merge upstream main"
+```
+
+Land the PR with a `merge` comment, never `squash`. A squash drops
+upstream's history, so every later sync conflicts again. The repository
+allows merge commits for this; the linear-history rule on `main` exempts
+the smyklot app.
+
 ## Rebase a fork onto a new upstream version
 
 ```sh
