@@ -35,7 +35,8 @@ jobs:
           permission-workflows: write
 
       # golt is not a GitHub fork, so merge-upstream is unavailable; merge with git
-      # and fail on conflicts, which are resolved manually (forks/README.md).
+      # and fail on conflicts, which are resolved in a PR landed with `merge`
+      # (forks/README.md).
       - name: Merge golangci/golangci-lint main
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
