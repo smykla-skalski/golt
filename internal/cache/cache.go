@@ -125,8 +125,8 @@ func (c *Cache) pkgActionID(pkg *packages.Package, mode HashMode) (cache.ActionI
 		return cache.ActionID{}, fmt.Errorf("failed to make a hash: %w", err)
 	}
 
-	fmt.Fprintf(key, "pkgpath %s\n", pkg.PkgPath)
-	fmt.Fprintf(key, "pkghash %s\n", hash)
+	_, _ = fmt.Fprintf(key, "pkgpath %s\n", pkg.PkgPath)
+	_, _ = fmt.Fprintf(key, "pkghash %s\n", hash)
 
 	return key.Sum(), nil
 }
@@ -171,7 +171,7 @@ func (c *Cache) computePkgHash(pkg *packages.Package) (hashResults, error) {
 
 	hashRes := hashResults{}
 
-	fmt.Fprintf(key, "pkgpath %s\n", pkg.PkgPath)
+	_, _ = fmt.Fprintf(key, "pkgpath %s\n", pkg.PkgPath)
 
 	if err := c.hashSources(key, pkg); err != nil {
 		return nil, err
@@ -215,7 +215,7 @@ func (c *Cache) exportDepsHash(pkg *packages.Package) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	fmt.Fprintf(exportKey, "self %s\n", selfHash)
+	_, _ = fmt.Fprintf(exportKey, "self %s\n", selfHash)
 	imps := slices.SortedFunc(maps.Values(pkg.Imports), func(a, b *packages.Package) int {
 		return strings.Compare(a.PkgPath, b.PkgPath)
 	})
@@ -227,7 +227,7 @@ func (c *Cache) exportDepsHash(pkg *packages.Package) (string, error) {
 		if err != nil {
 			return c.packageHash(pkg, HashModeNeedAllDeps)
 		}
-		fmt.Fprintf(exportKey, "import %s %s\n", dep.PkgPath, hash)
+		_, _ = fmt.Fprintf(exportKey, "import %s %s\n", dep.PkgPath, hash)
 	}
 	curSum := exportKey.Sum()
 	return hex.EncodeToString(curSum[:]), nil
@@ -269,11 +269,19 @@ func (c *Cache) exportHash(pkg *packages.Package) (string, error) {
 // files cannot affect analysis results.
 func (c *Cache) hashSources(key *cache.Hash, pkg *packages.Package) error {
 	if identifiedByBuildID(pkg) {
-		fmt.Fprintf(key, "buildid %s\n", pkg.BuildID)
+		_, _ = fmt.Fprintf(key, "buildid %s\n", pkg.BuildID)
 		return nil
 	}
 
-	for _, f := range slices.Concat(pkg.CompiledGoFiles, pkg.IgnoredFiles) {
+	if err := c.computeFilesHash("CompiledGoFiles", pkg.CompiledGoFiles, pkg, key); err != nil {
+		return err
+	}
+
+	return c.computeFilesHash("IgnoredFiles", pkg.IgnoredFiles, pkg, key)
+}
+
+func (c *Cache) computeFilesHash(src string, files []string, pkg *packages.Package, key *cache.Hash) error {
+	for _, f := range files {
 		h, err := c.fileHash(f)
 		if err != nil {
 			return fmt.Errorf("failed to calculate file %s hash: %w", f, err)
@@ -283,7 +291,7 @@ func (c *Cache) hashSources(key *cache.Hash, pkg *packages.Package) error {
 			f = pkg.Module.Path + "/" + rel
 		}
 
-		fmt.Fprintf(key, "file %s %x\n", f, h)
+		_, _ = fmt.Fprintf(key, "%s=%s %x\n", src, f, h)
 	}
 
 	return nil
@@ -300,7 +308,7 @@ func (c *Cache) computeDepsHash(depMode HashMode, imps []*packages.Package, key 
 			return fmt.Errorf("failed to calculate hash for dependency %s with mode %d: %w", dep.Name, depMode, err)
 		}
 
-		fmt.Fprintf(key, "import %s %s\n", dep.PkgPath, depHash)
+		_, _ = fmt.Fprintf(key, "import %s %s\n", dep.PkgPath, depHash)
 	}
 
 	return nil
