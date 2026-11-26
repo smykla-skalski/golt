@@ -9,7 +9,7 @@ rust-version = "1.95"
 
 [workspace.dependencies]
 command-group = "=5.0.1"
-ctrlc = { version = "=3.5.2", features = ["termination"] }
+ctrlc = { version = "=3.5.3", features = ["termination"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = { version = "1.0", features = ["arbitrary_precision", "raw_value"] }
 sysinfo = { version = "=0.39.6", default-features = false, features = ["system"] }
